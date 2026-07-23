@@ -1,0 +1,14 @@
+{
+  "skills": ["datahub-rca"],
+  "query": "The revenue dashboard dropped 40% this morning and a volume assertion on daily_revenue failed. Why?",
+  "expected_behavior": [
+    "Resolves the symptom to the daily_revenue dataset URN via search",
+    "Calls get_lineage upstream (max_hops 3) to scope the suspect subgraph",
+    "Ranks upstream candidates using freshness, volume, schema, and query signals",
+    "Identifies the furthest-upstream node carrying a strong signal (raw_trips) as the top candidate, not the intermediate victim",
+    "Calls get_lineage_paths_between to VERIFY a path from the symptom to the candidate before accepting it",
+    "Captures the transform SQL along the path as proof",
+    "Refuses to report any candidate it cannot connect with a verifiable lineage path",
+    "Writes an incident dossier back via save_document and tags the culprit root-cause"
+  ]
+}

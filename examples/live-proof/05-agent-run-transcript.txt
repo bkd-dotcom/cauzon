@@ -1,0 +1,22 @@
+
+🔎 Cauzon — LIVE run against http://localhost:8080 
+
+[DETECT     ] Investigating incident on urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)
+[SCOPE      ] Pulled 2 upstream nodes within 3 hops.
+[HYPOTHESIZE] Ranked 2 candidates. Top: raw_trips
+[PROVE      ] Verified path to raw_trips across 2 lineage edge(s). Root cause grounded.
+[WRITEBACK  ] Wrote incident dossier to DataHub and tagged `raw_trips` as root cause. The next person or agent inherits this knowledge.
+
+================================================================
+✅ GROUNDED ROOT CAUSE: raw_trips
+   Confidence: 80%
+   Proof path: nyc.raw_trips -> nyc.trips_cleaned -> nyc.daily_revenue
+   Fix: Backfill / restart the ingestion job feeding `raw_trips`; it is the upstream origin of the staleness. Re-run downstream transforms once fresh data lands.
+================================================================
+
+Write-backs to live DataHub (3):
+   📄 save_document -> urn:li:document:shared-e7bd2eb0-4f50-4398-adaa-3a1a3c59ef46
+   🏷️  add_tags ['root-cause', 'cauzon-diagnosed'] -> nyc.raw_trips
+   📝 update_description -> nyc.raw_trips
+
+Verify in the UI: http://localhost:9002  (search 'raw_trips')

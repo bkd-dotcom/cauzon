@@ -1,0 +1,16 @@
+{
+    "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+    "editableDatasetProperties": {
+        "value": {
+            "description": "Demo dataset 'raw_trips' for Cauzon RCA.Cauzon test: identified as root cause of a demo incident.\u26a0\ufe0f Cauzon identified this as the root cause of incident 'daily_revenue is 40% below expected volume'. See dossier urn:li:document:shared-cce62029-488e-460b-ac9e-d968556bd4ca.",
+            "created": {
+                "actor": "urn:li:corpuser:unknown",
+                "time": 0
+            },
+            "lastModified": {
+                "actor": "urn:li:corpuser:unknown",
+                "time": 0
+            }
+        }
+    }
+}

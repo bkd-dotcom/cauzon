@@ -1,0 +1,2 @@
+{"urn":"urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)","upstreamLineage":{"value":{"upstreams":[{"auditStamp":{"actor":"urn:li:corpuser:unknown","time":0},"type":"TRANSFORMED","dataset":"urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)"}]}}}
+{"urn":"urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)","upstreamLineage":{"value":{"upstreams":[{"auditStamp":{"actor":"urn:li:corpuser:unknown","time":0},"type":"TRANSFORMED","dataset":"urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)"}]}}}

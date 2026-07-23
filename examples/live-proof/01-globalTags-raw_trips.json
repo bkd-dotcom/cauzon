@@ -1,0 +1,15 @@
+{
+    "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+    "globalTags": {
+        "value": {
+            "tags": [
+                {
+                    "tag": "urn:li:tag:root-cause"
+                },
+                {
+                    "tag": "urn:li:tag:cauzon-diagnosed"
+                }
+            ]
+        }
+    }
+}
