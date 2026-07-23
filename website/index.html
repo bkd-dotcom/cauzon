@@ -3,396 +3,271 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cauzon — Every root cause, proven from the source</title>
-  <meta name="description" content="Cauzon is a path-grounded root-cause analysis agent for data incidents on DataHub. It walks lineage upstream, proves the cause with a verifiable path, and writes the diagnosis back to the catalog." />
+  <title>Cauzon — root-cause analysis for data incidents on DataHub</title>
+  <meta name="description" content="Cauzon is an open-source agent that diagnoses data incidents. It walks DataHub lineage upstream, identifies the root cause, verifies it against the lineage graph, and writes the finding back to the catalog." />
 
-  <meta property="og:title" content="Cauzon — path-grounded RCA for DataHub" />
-  <meta property="og:description" content="Walks lineage upstream, proves the root cause, and writes it back. Built on DataHub's Agent Context Kit." />
+  <meta property="og:title" content="Cauzon — root-cause analysis for DataHub" />
+  <meta property="og:description" content="An open-source agent that traces a data incident to its root cause and proves it against the lineage graph." />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="assets/icon-512.png" />
-  <meta name="theme-color" content="#070a14" />
+  <meta name="theme-color" content="#0d1117" />
 
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="assets/icon-512.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- animated background mesh -->
-  <div class="bg-mesh" aria-hidden="true">
-    <div class="orb orb-1"></div>
-    <div class="orb orb-2"></div>
-    <div class="orb orb-3"></div>
-    <div class="grid-overlay"></div>
-  </div>
-
-  <!-- scroll progress -->
-  <div class="scroll-progress" id="scrollProgress" aria-hidden="true"></div>
-
   <!-- ===================== NAV ===================== -->
   <header class="nav" id="nav">
-    <a class="brand" href="#top" aria-label="Cauzon home">
-      <img src="assets/icon.svg" alt="" width="34" height="34" />
-      <span>Cauzon</span>
-    </a>
-    <nav class="nav-links" id="navLinks">
-      <a href="#how">How it works</a>
-      <a href="#proof">Proof</a>
-      <a href="#features">Features</a>
-      <a href="#research">Research</a>
-      <a class="btn btn-nav" href="https://github.com/bkd-dotcom/cauzon" target="_blank" rel="noopener">
-        <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-        GitHub
+    <div class="container nav-inner">
+      <a class="brand" href="#top" aria-label="Cauzon home">
+        <img src="assets/icon.svg" alt="" width="28" height="28" />
+        <span>Cauzon</span>
       </a>
-    </nav>
-    <button class="nav-toggle" aria-label="Toggle menu" id="navToggle"><span></span><span></span><span></span></button>
+      <nav class="nav-links" id="navLinks">
+        <a href="#how">How it works</a>
+        <a href="#example">Example</a>
+        <a href="#design">Design</a>
+        <a href="#install">Install</a>
+        <a class="gh-link" href="https://github.com/bkd-dotcom/cauzon" target="_blank" rel="noopener">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+      </nav>
+      <button class="nav-toggle" aria-label="Toggle menu" id="navToggle"><span></span><span></span></button>
+    </div>
   </header>
 
   <!-- ===================== HERO ===================== -->
-  <section class="hero" id="top">
-    <div class="container hero-inner">
-      <div class="reveal badge-row">
-        <span class="pill pill-live"><i class="dot"></i> Verified on live DataHub</span>
-        <span class="pill">The Agent Hackathon</span>
-      </div>
-      <h1 class="reveal hero-title">
-        Every root cause,
-        <span class="grad">proven from the source.</span>
-      </h1>
-      <p class="reveal lede">
-        Cauzon is an AI agent that diagnoses data incidents. It walks
-        <strong>DataHub</strong> lineage upstream, ranks the culprits, and only
-        blames a table when it can show the <em>verifiable path</em> — then writes
-        the dossier back so the next person, or agent, inherits it.
-      </p>
-      <div class="reveal cta-row">
-        <a class="btn btn-primary" href="https://github.com/bkd-dotcom/cauzon" target="_blank" rel="noopener">
-          View on GitHub
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </a>
-        <a class="btn btn-ghost" href="#how">See how it works</a>
-      </div>
-
-      <div class="reveal hero-stats">
-        <div><b data-count="5">5</b><span>MCP tools orchestrated</span></div>
-        <div><b data-count="0">0</b><span>ungrounded diagnoses</span></div>
-        <div><b data-count="3">3</b><span>write-backs to the graph</span></div>
-      </div>
-
-      <!-- Terminal replay -->
-      <div class="reveal terminal" role="img" aria-label="Cauzon investigation replay">
-        <div class="term-bar">
-          <span class="tb-dot"></span><span class="tb-dot"></span><span class="tb-dot"></span>
-          <em>cauzon investigate --live</em>
-        </div>
-        <pre class="term-body" id="termBody"></pre>
-      </div>
-    </div>
-    <div class="hero-fade"></div>
-  </section>
-
-  <!-- ===================== LOGOS / CONTEXT STRIP ===================== -->
-  <section class="strip">
-    <div class="container strip-inner">
-      <span>Built on the open-source context platform trusted at</span>
-      <div class="strip-logos">
-        <b>Apple</b><b>Netflix</b><b>Pinterest</b><b>+ hundreds more</b>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===================== PROBLEM ===================== -->
-  <section class="section" id="problem">
+  <main id="top">
+  <section class="hero">
     <div class="container">
-      <div class="reveal section-head">
-        <span class="eyebrow">The problem</span>
-        <h2 class="section-title">The 2&nbsp;a.m. question</h2>
-        <p class="section-sub">"The revenue dashboard is wrong. <strong>Why?</strong>"</p>
+      <p class="kicker">Open-source · Apache-2.0 · built on DataHub</p>
+      <h1>Trace a data incident to its<br />root cause — and prove it.</h1>
+      <p class="lede">
+        Cauzon is an agent that investigates data incidents on
+        <a href="https://datahub.com" target="_blank" rel="noopener">DataHub</a>.
+        It walks lineage upstream to find where a problem started, verifies the
+        cause against the lineage graph before reporting it, and writes the
+        finding back to the catalog so it isn't lost.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="https://github.com/bkd-dotcom/cauzon" target="_blank" rel="noopener">View source</a>
+        <a class="btn btn-secondary" href="#how">How it works</a>
       </div>
-      <div class="grid-3">
-        <div class="reveal card">
-          <div class="card-ico">🚨</div>
-          <h3>Alerts tell you <em>that</em></h3>
-          <p>Observability tools fire when a metric moves. They stop there — you still trace the cause by hand.</p>
-        </div>
-        <div class="reveal card" style="--d:.08s">
-          <div class="card-ico">🕳️</div>
-          <h3>Agents <em>hallucinate</em></h3>
-          <p>Without grounded context, an LLM invents a plausible cause it can't back up. Guesses pollute the catalog.</p>
-        </div>
-        <div class="reveal card" style="--d:.16s">
-          <div class="card-ico">⏱️</div>
-          <h3>Humans burn <em>hours</em></h3>
-          <p>Click through lineage, diff schemas, read SQL — a fire drill that repeats every single incident.</p>
-        </div>
-      </div>
+
+      <figure class="term">
+        <figcaption class="term-bar">
+          <span class="tb-dot"></span><span class="tb-dot"></span><span class="tb-dot"></span>
+          <code>cauzon investigate</code>
+        </figcaption>
+        <pre class="term-body"><span class="c-dim">$ cauzon investigate --incident daily_revenue</span>
+<span class="c-b">detect</span>       daily_revenue — volume assertion failed (row_count &minus;40%)
+<span class="c-b">scope</span>        2 upstream datasets within 3 hops
+<span class="c-b">hypothesize</span>  raw_trips: 51h stale (SLA 24h), &minus;100% new rows
+<span class="c-b">prove</span>        path verified: raw_trips → trips_cleaned → daily_revenue
+<span class="c-b">write&nbsp;back</span>   tagged raw_trips 'root-cause'; dossier saved
+
+<span class="c-ok">root cause: raw_trips</span> <span class="c-dim">— ingestion stalled ~2 days ago</span></pre>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===================== CONTEXT ===================== -->
+  <section class="section" id="why">
+    <div class="container narrow">
+      <h2>Why this exists</h2>
+      <p class="body">
+        When a dashboard shows the wrong numbers, the alert tells you
+        <em>something</em> broke — not <em>what</em>. Someone still has to open the
+        lineage graph, work upstream table by table, diff schemas, and read the
+        transformation SQL until they find the origin. It's slow, it happens
+        repeatedly, and the reasoning is thrown away afterward.
+      </p>
+      <p class="body">
+        A language model can do this traversal, but on its own it tends to name a
+        plausible-sounding cause it can't substantiate. Cauzon's constraint is
+        simple: <strong>it only reports a cause it can connect to the symptom with
+        an actual path through the lineage graph.</strong> If it can't find that
+        path, it says so rather than guessing.
+      </p>
     </div>
   </section>
 
   <!-- ===================== HOW IT WORKS ===================== -->
   <section class="section section-alt" id="how">
     <div class="container">
-      <div class="reveal section-head">
-        <span class="eyebrow">The method</span>
-        <h2 class="section-title">Five phases, zero guesses</h2>
-        <p class="section-sub">Each step is grounded in a real DataHub tool call.</p>
+      <div class="section-head">
+        <h2>How it works</h2>
+        <p class="body">Five steps, each backed by a DataHub tool call through the MCP Server.</p>
       </div>
 
-      <div class="steps">
-        <div class="reveal step">
-          <span class="step-num">01</span>
-          <div class="step-body">
-            <h3>Detect</h3>
-            <p>Resolve the symptom — a failing assertion, a stale table, a wrong dashboard — to a concrete dataset.</p>
-            <div class="tool-chips"><code>search</code><code>incidents</code></div>
-          </div>
-        </div>
-        <div class="reveal step">
-          <span class="step-num">02</span>
-          <div class="step-body">
-            <h3>Scope</h3>
-            <p>Pull the minimal upstream subgraph. Stay focused; don't fan out further than needed.</p>
-            <div class="tool-chips"><code>get_lineage</code></div>
-          </div>
-        </div>
-        <div class="reveal step">
-          <span class="step-num">03</span>
-          <div class="step-body">
-            <h3>Hypothesize</h3>
-            <p>Rank candidates on freshness lag, volume anomaly, schema change, and query drift. Prefer the origin.</p>
-            <div class="tool-chips"><code>get_entities</code><code>list_schema_fields</code></div>
-          </div>
-        </div>
-        <div class="reveal step step-key">
-          <span class="step-num">04</span>
-          <div class="step-body">
-            <h3>Prove <span class="tag-key">the key step</span></h3>
-            <p>Accept a cause <strong>only</strong> if a lineage path reconstructs to the symptom — with the transform SQL that carried the fault. No path, no diagnosis.</p>
-            <div class="tool-chips"><code>get_lineage_paths_between</code><code>get_dataset_queries</code></div>
-          </div>
-        </div>
-        <div class="reveal step">
-          <span class="step-num">05</span>
-          <div class="step-body">
-            <h3>Write back</h3>
-            <p>Persist the dossier, tag the culprit <code class="inline">root-cause</code>, note the owner — the knowledge is inherited.</p>
-            <div class="tool-chips"><code>save_document</code><code>add_tags</code><code>update_description</code></div>
-          </div>
-        </div>
-      </div>
+      <ol class="steps">
+        <li>
+          <div class="step-h"><span class="step-n">1</span><h3>Detect</h3></div>
+          <p>Resolve the reported symptom — a failing assertion, a stale table, a wrong dashboard — to a specific dataset.</p>
+          <p class="tools"><code>search</code> <code>incidents</code></p>
+        </li>
+        <li>
+          <div class="step-h"><span class="step-n">2</span><h3>Scope</h3></div>
+          <p>Fetch the upstream lineage, limited to a few hops, so the search stays bounded to the datasets that could plausibly be responsible.</p>
+          <p class="tools"><code>get_lineage</code></p>
+        </li>
+        <li>
+          <div class="step-h"><span class="step-n">3</span><h3>Rank candidates</h3></div>
+          <p>Score each upstream dataset on freshness lag, row-count change, recent schema changes, and changes to its defining query. The origin usually sits furthest upstream, not at the first table that looks wrong.</p>
+          <p class="tools"><code>get_entities</code> <code>list_schema_fields</code></p>
+        </li>
+        <li class="step-emph">
+          <div class="step-h"><span class="step-n">4</span><h3>Verify the path</h3></div>
+          <p>Before accepting a candidate, reconstruct the lineage path from it to the symptom and pull the transformation SQL along the way. No path means the candidate is rejected — not reported.</p>
+          <p class="tools"><code>get_lineage_paths_between</code> <code>get_dataset_queries</code></p>
+        </li>
+        <li>
+          <div class="step-h"><span class="step-n">5</span><h3>Write back</h3></div>
+          <p>Save the incident write-up as a document, tag the responsible dataset, and update its description — so the next person, or the next agent, starts from what was already learned.</p>
+          <p class="tools"><code>save_document</code> <code>add_tags</code> <code>update_description</code></p>
+        </li>
+      </ol>
     </div>
   </section>
 
-  <!-- ===================== INTERACTIVE PROOF ===================== -->
-  <section class="section" id="proof">
+  <!-- ===================== WORKED EXAMPLE ===================== -->
+  <section class="section" id="example">
     <div class="container">
-      <div class="reveal section-head">
-        <span class="eyebrow">Live demo</span>
-        <h2 class="section-title">Proof, not a guess</h2>
-        <p class="section-sub">A ranking is a hypothesis. A reconstructed path is evidence. Press play.</p>
+      <div class="section-head">
+        <h2>A worked example</h2>
+        <p class="body">The revenue dashboard drops 40%. Here is what Cauzon reports.</p>
       </div>
 
-      <div class="reveal proof-stage">
-        <div class="proof-controls">
-          <button class="btn btn-primary btn-sm" id="replayBtn">▶ Replay investigation</button>
-          <div class="phase-track" id="phaseTrack">
-            <span data-p="detect">Detect</span>
-            <span data-p="scope">Scope</span>
-            <span data-p="hypothesize">Hypothesize</span>
-            <span data-p="prove">Prove</span>
-            <span data-p="writeback">Write&nbsp;back</span>
+      <div class="example">
+        <div class="ex-lineage">
+          <h4 class="ex-label">Lineage traversal</h4>
+          <div class="chain">
+            <div class="lnode symptom">
+              <code>daily_revenue</code>
+              <span>symptom — volume &minus;40%</span>
+            </div>
+            <div class="down"><span>reads from</span></div>
+            <div class="lnode">
+              <code>trips_cleaned</code>
+              <span>passes the problem through</span>
+            </div>
+            <div class="down"><span>reads from</span></div>
+            <div class="lnode cause">
+              <code>raw_trips</code>
+              <span>root cause — ingestion stalled</span>
+            </div>
           </div>
         </div>
 
-        <div class="proof-grid">
-          <div class="lineage" id="lineage">
-            <div class="lnode symptom" id="n-symptom">
-              <span class="lname">daily_revenue</span>
-              <span class="lmeta">🚨 symptom · −40% volume</span>
-            </div>
-            <div class="ledge" id="e-1"><i></i></div>
-            <div class="lnode" id="n-mid">
-              <span class="lname">trips_cleaned</span>
-              <span class="lmeta">intermediate</span>
-            </div>
-            <div class="ledge" id="e-2"><i></i></div>
-            <div class="lnode" id="n-cause">
-              <span class="lname">raw_trips</span>
-              <span class="lmeta" id="cause-meta">upstream</span>
-            </div>
-          </div>
-
-          <div class="dossier" id="dossier">
-            <div class="dossier-head">
-              <strong>Incident dossier</strong>
-              <span class="conf" id="confBadge">—</span>
-            </div>
-            <ul class="evidence" id="evidence">
-              <li class="ev-hidden">Freshness <b>51h</b> exceeds expected <b>24h</b> (+27h stale)</li>
-              <li class="ev-hidden">Row count changed <b>−100%</b> vs baseline</li>
+        <div class="ex-dossier">
+          <h4 class="ex-label">Dossier written to DataHub</h4>
+          <div class="dossier">
+            <div class="d-row"><span>Symptom</span><code>daily_revenue</code></div>
+            <div class="d-row"><span>Root cause</span><code>raw_trips</code></div>
+            <div class="d-row"><span>Confidence</span><b>80%</b></div>
+            <div class="d-sec">Evidence</div>
+            <ul>
+              <li>Freshness 51h against a 24h expectation (27h stale)</li>
+              <li>Row count &minus;100% versus the trailing baseline</li>
             </ul>
-            <div class="sql-block" id="sqlBlock">
-              <span class="sql-label">transform that carried the fault</span>
-              <pre>CREATE OR REPLACE TABLE trips_cleaned AS
+            <div class="d-sec">Transform that carried the fault downstream</div>
+            <pre>CREATE OR REPLACE TABLE trips_cleaned AS
 SELECT * FROM raw_trips WHERE fare_amount &gt; 0</pre>
-            </div>
-            <p class="fix" id="fixLine"><b>Fix:</b> restart the ingestion job feeding <code class="inline">raw_trips</code>; re-run downstream transforms.</p>
-            <div class="writeback-row" id="writebackRow">
-              <span class="wb-chip">📄 dossier saved</span>
-              <span class="wb-chip">🏷️ tagged root-cause</span>
-              <span class="wb-chip">📝 description updated</span>
-            </div>
+            <div class="d-sec">Recommended fix</div>
+            <p>Restart the ingestion job feeding <code>raw_trips</code>, then re-run the downstream transforms.</p>
           </div>
         </div>
       </div>
 
-      <p class="reveal proof-note">
-        ✅ Verified live: Cauzon ran this against a real
-        <code class="inline">datahub docker quickstart</code>, tagged the culprit, and
-        wrote this dossier back. Raw evidence:
+      <p class="note">
+        This run was executed against a local <code>datahub docker quickstart</code>.
+        The tags, description, and dossier it wrote were read back out of DataHub
+        afterward as confirmation — the captured aspects are in
         <a href="https://github.com/bkd-dotcom/cauzon/tree/main/examples/live-proof" target="_blank" rel="noopener">examples/live-proof</a>.
       </p>
     </div>
   </section>
 
-  <!-- ===================== COMPARISON ===================== -->
-  <section class="section section-alt" id="compare">
-    <div class="container">
-      <div class="reveal section-head">
-        <span class="eyebrow">Why it's different</span>
-        <h2 class="section-title">Beyond "something broke"</h2>
-      </div>
-      <div class="reveal compare">
-        <div class="compare-col">
-          <h4>Typical observability</h4>
-          <ul class="x-list">
-            <li>Alerts that a metric moved</li>
-            <li>Leaves you to trace the cause</li>
-            <li>No proof, no audit trail</li>
-            <li>Never contributes back</li>
-          </ul>
+  <!-- ===================== DESIGN NOTES ===================== -->
+  <section class="section section-alt" id="design">
+    <div class="container narrow">
+      <h2>Design notes</h2>
+
+      <div class="dl">
+        <div class="dl-row">
+          <h3>It refuses to guess</h3>
+          <p>A ranking is a hypothesis. Cauzon only reports a root cause once it has reconstructed the lineage path connecting it to the symptom. When no path can be found, it reports that and stops, rather than writing an unsupported claim into a shared catalog.</p>
         </div>
-        <div class="compare-col compare-win">
-          <h4>Cauzon</h4>
-          <ul class="check-list">
-            <li>Localizes the <b>origin</b> by walking lineage</li>
-            <li>Carries a <b>verifiable proof path</b></li>
-            <li>Refuses ungrounded diagnoses</li>
-            <li>Writes the finding <b>back into the graph</b></li>
-          </ul>
+        <div class="dl-row">
+          <h3>It looks for the origin</h3>
+          <p>The table that looks broken is usually a victim, not the cause. The scoring prefers the dataset furthest upstream that still shows a strong signal — the point where the fault actually entered the pipeline.</p>
+        </div>
+        <div class="dl-row">
+          <h3>The same core runs anywhere</h3>
+          <p>The investigation loop is a plain Python module. It runs against a live DataHub through the MCP Server, or against a bundled mock with two planted-fault scenarios so the project can be run and tested without any infrastructure.</p>
+        </div>
+        <div class="dl-row">
+          <h3>It tolerates a lagging index</h3>
+          <p>DataHub's lineage search depends on a graph index that can fall behind. When it returns nothing, Cauzon falls back to reading the stored lineage aspects directly, so an investigation still completes.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ===================== FEATURES ===================== -->
-  <section class="section" id="features">
-    <div class="container">
-      <div class="reveal section-head">
-        <span class="eyebrow">Capabilities</span>
-        <h2 class="section-title">Engineered to be trusted</h2>
-      </div>
-      <div class="grid-3 feature-grid">
-        <div class="reveal card feat"><div class="card-ico">🧭</div><h3>Origin-seeking</h3><p>Blames the upstream origin, not the intermediate victim that merely inherited the symptom.</p></div>
-        <div class="reveal card feat" style="--d:.06s"><div class="card-ico">🔗</div><h3>Path-grounded</h3><p>Every claim carries a verifiable lineage path. No path, no diagnosis.</p></div>
-        <div class="reveal card feat" style="--d:.12s"><div class="card-ico">✍️</div><h3>Writes back</h3><p>Contributes the finding to the graph — the highest-value behavior a data agent can have.</p></div>
-        <div class="reveal card feat" style="--d:.06s"><div class="card-ico">🧱</div><h3>Backend-agnostic</h3><p>Identical agent logic over a zero-infra mock or a live DataHub via the MCP Server.</p></div>
-        <div class="reveal card feat" style="--d:.12s"><div class="card-ico">🛡️</div><h3>Index-resilient</h3><p>Falls back to raw lineage aspects when the graph index lags. RCA keeps working.</p></div>
-        <div class="reveal card feat" style="--d:.18s"><div class="card-ico">📱</div><h3>Web + mobile</h3><p>A Next.js PWA you can install on your phone, with a live reasoning trace.</p></div>
-      </div>
+  <!-- ===================== APPROACH / REFERENCES ===================== -->
+  <section class="section" id="approach">
+    <div class="container narrow">
+      <h2>Approach</h2>
+      <p class="body">
+        The verify-the-path requirement follows a line of recent root-cause-analysis
+        work arguing that a diagnosis is only useful if the causal path behind it can
+        be checked, not just asserted. Cauzon applies that idea to data lineage: the
+        path <em>is</em> the explanation.
+      </p>
+      <ul class="reflist">
+        <li><span>RCAFlow</span> hierarchical multi-agent root-cause planning <em>(AAAI 2026)</em></li>
+        <li><span>RCRank</span> multimodal ranking of root causes <em>(VLDB 2025)</em></li>
+        <li><span>OpenRCA / PAVE</span> penalizing unverified diagnosis paths <em>(2026)</em></li>
+        <li><span>DeepRoot</span> separating grounding from reasoning <em>(ICML 2026)</em></li>
+      </ul>
     </div>
   </section>
 
-  <!-- ===================== BENTO ARCHITECTURE ===================== -->
-  <section class="section" id="architecture">
-    <div class="container">
-      <div class="reveal section-head">
-        <span class="eyebrow">Under the hood</span>
-        <h2 class="section-title">One agent, every surface</h2>
-        <p class="section-sub">The same investigation core runs from a terminal, a web app, or an installable mobile PWA.</p>
-      </div>
+  <!-- ===================== INSTALL ===================== -->
+  <section class="section section-alt" id="install">
+    <div class="container narrow">
+      <h2>Try it</h2>
+      <p class="body">Runs against the bundled mock with no setup, or against a local DataHub.</p>
+      <pre class="code-block"><span class="c-dim"># clone and install</span>
+git clone https://github.com/bkd-dotcom/cauzon
+cd cauzon && pip install -e .
 
-      <div class="bento">
-        <div class="reveal bento-cell bento-lg">
-          <div class="bento-tag">Agent core</div>
-          <h3>detect → scope → hypothesize → prove → write&nbsp;back</h3>
-          <p>A framework-agnostic Python loop. Swap the backend without touching the logic.</p>
-          <div class="bento-flow">
-            <span>detect</span><i>→</i><span>scope</span><i>→</i><span>hypothesize</span><i>→</i><span class="hot">prove</span><i>→</i><span>write back</span>
-          </div>
-        </div>
-        <div class="reveal bento-cell" style="--d:.06s">
-          <div class="bento-tag">MCP Server</div>
-          <h3>Live DataHub</h3>
-          <p>Real lineage, schemas, queries — and mutations to write findings back.</p>
-        </div>
-        <div class="reveal bento-cell" style="--d:.12s">
-          <div class="bento-tag">Zero-infra</div>
-          <h3>Mock backend</h3>
-          <p>Two planted-fault scenarios. Runs the whole app with no setup.</p>
-        </div>
-        <div class="reveal bento-cell" style="--d:.06s">
-          <div class="bento-tag">FastAPI</div>
-          <h3>WebSocket trace</h3>
-          <p>Streams every reasoning step to the UI, live.</p>
-        </div>
-        <div class="reveal bento-cell bento-wide" style="--d:.12s">
-          <div class="bento-tag">DataHub Skill</div>
-          <h3>Contributed upstream — <code class="inline">datahub-rca</code></h3>
-          <p>A ready-to-PR Skill so any MCP agent (Claude Code, Cursor, Gemini CLI, Copilot) can perform path-grounded RCA. Formatted to match the datahub-skills repo conventions.</p>
-        </div>
+<span class="c-dim"># run an investigation against the bundled mock</span>
+python -m cauzon.cli --scenario freshness
+
+<span class="c-dim"># or point it at a live DataHub</span>
+export CAUZON_DATAHUB_BACKEND=mcp
+export DATAHUB_GMS_URL=http://localhost:8080
+export DATAHUB_TOKEN=&lt;token&gt;
+python scripts/run_live_writeback.py</pre>
+      <div class="install-links">
+        <a class="btn btn-primary" href="https://github.com/bkd-dotcom/cauzon" target="_blank" rel="noopener">Repository</a>
+        <a class="btn btn-secondary" href="https://github.com/bkd-dotcom/cauzon/tree/main/examples" target="_blank" rel="noopener">Example output</a>
       </div>
     </div>
   </section>
-
-  <!-- ===================== MARQUEE ===================== -->
-  <section class="marquee-section" aria-hidden="true">
-    <div class="marquee">
-      <div class="marquee-track">
-        <span>search</span><span>get_lineage</span><span>get_lineage_paths_between</span><span>get_entities</span><span>list_schema_fields</span><span>get_dataset_queries</span><span>add_tags</span><span>update_description</span><span>save_document</span>
-        <span>search</span><span>get_lineage</span><span>get_lineage_paths_between</span><span>get_entities</span><span>list_schema_fields</span><span>get_dataset_queries</span><span>add_tags</span><span>update_description</span><span>save_document</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===================== RESEARCH ===================== -->
-  <section class="section section-alt" id="research">
-    <div class="container">
-      <div class="reveal section-head">
-        <span class="eyebrow">Foundations</span>
-        <h2 class="section-title">Grounded in 2025–2026 research</h2>
-        <p class="section-sub">Path-grounded diagnosis is the RCA frontier — and it isn't a shipped product yet.</p>
-      </div>
-      <div class="grid-2 refs">
-        <div class="reveal ref"><div class="ref-top"><b>RCAFlow</b><span>AAAI 2026</span></div><p>Hierarchical multi-agent root-cause planning.</p></div>
-        <div class="reveal ref" style="--d:.06s"><div class="ref-top"><b>RCRank</b><span>VLDB 2025</span></div><p>Multimodal ranking of root causes.</p></div>
-        <div class="reveal ref" style="--d:.12s"><div class="ref-top"><b>PAVE / OpenRCA 2.0</b><span>2026</span></div><p>The "ungrounded diagnosis" problem — a correct cause with an unverified path is unacceptable.</p></div>
-        <div class="reveal ref" style="--d:.18s"><div class="ref-top"><b>DeepRoot</b><span>ICML 2026</span></div><p>Separate grounding from reasoning to cut hallucination.</p></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===================== CTA ===================== -->
-  <section class="cta">
-    <div class="container cta-inner reveal">
-      <h2>Agents that ship real work<br />need real context.</h2>
-      <p>Cauzon turns DataHub's lineage graph into grounded, auditable root-cause analysis.</p>
-      <div class="cta-row">
-        <a class="btn btn-primary" href="https://github.com/bkd-dotcom/cauzon" target="_blank" rel="noopener">Explore the code
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </a>
-        <a class="btn btn-ghost" href="https://datahub.com" target="_blank" rel="noopener">About DataHub</a>
-      </div>
-    </div>
-  </section>
+  </main>
 
   <footer class="footer">
     <div class="container footer-inner">
-      <div class="brand"><img src="assets/icon.svg" alt="" width="26" height="26" /><span>Cauzon</span></div>
-      <p>Path-grounded root-cause analysis for DataHub · Apache-2.0 · built on the Agent Context Kit + MCP Server.</p>
-      <p class="muted">Not affiliated with DataHub. Built for Build&nbsp;with&nbsp;DataHub: The&nbsp;Agent&nbsp;Hackathon.</p>
+      <div class="brand"><img src="assets/icon.svg" alt="" width="22" height="22" /><span>Cauzon</span></div>
+      <p>Root-cause analysis for data incidents on DataHub. Apache-2.0.</p>
+      <p class="fine">An independent open-source project. Not affiliated with or endorsed by DataHub.</p>
     </div>
   </footer>
 
