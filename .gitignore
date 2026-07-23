@@ -20,3 +20,9 @@ npm-debug.log*
 
 # OS
 .DS_Store
+
+# Installed agent skills (tooling, not project code)
+.agents/
+.claude/
+skills-lock.json
+design-system/
