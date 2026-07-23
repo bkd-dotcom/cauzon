@@ -43,7 +43,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-size: 16px;
-  line-height: 1.6;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -100,38 +100,49 @@ html { scroll-behavior: smooth; }
 .tagline { font-family: var(--mono); font-size: 13px; color: var(--ink-dim); margin-bottom: 22px; }
 .hero h1 { font-size: clamp(2.2rem, 4.4vw, 3.5rem); line-height: 1.06; letter-spacing: -0.03em;
   font-weight: 700; text-wrap: balance; margin-bottom: 22px; }
-.lede { font-size: 1.16rem; color: var(--ink-soft); max-width: 60ch; margin-bottom: 30px; }
+.lede { font-size: 1.16rem; line-height: 1.6; color: var(--ink-soft); max-width: 58ch; margin-bottom: 30px; }
 .actions { display: flex; gap: 12px; flex-wrap: wrap; }
 
-/* ---------- signature graph ---------- */
-.graph { position: relative; min-height: 320px; }
-.graph-svg { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--blue-soft); overflow: visible; }
-.edge { stroke: var(--line-2); stroke-width: 2; }
-.edge.lit { stroke: var(--blue); }
-.edge { stroke-dasharray: 60; stroke-dashoffset: 60; animation: draw 0.8s var(--ease) forwards; }
-.edge:nth-child(2) { animation-delay: 0.5s; }
-@keyframes draw { to { stroke-dashoffset: 0; } }
-
-.gnode { position: absolute; left: 50%; transform: translateX(-50%); width: min(320px, 78%);
-  background: var(--surface); border: 1px solid var(--line-2); border-radius: 12px; padding: 14px 16px;
-  box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 3px;
-  opacity: 0; animation: rise 0.6s var(--ease) forwards; }
-.gnode:nth-child(2) { animation-delay: 0.15s; }  /* cause (top, first in DOM) */
-.gnode:nth-child(3) { animation-delay: 0.55s; }  /* mid */
-.gnode:nth-child(4) { animation-delay: 0.9s; }   /* symptom */
-@keyframes rise { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+/* ---------- signature graph: one in-flow column, guaranteed alignment ---------- */
+.graph { position: relative; }
+.chain { display: flex; flex-direction: column; align-items: stretch; }
+.gnode { position: relative; background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: 12px; padding: 15px 17px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 3px; }
 .gnode code { font-size: 15px; font-weight: 500; color: var(--ink); }
 .gnode .gmeta { font-size: 12.5px; color: var(--ink-dim); }
-.gtag { align-self: flex-start; font-size: 10.5px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.06em; padding: 2px 8px; border-radius: 999px; margin-bottom: 2px; }
-.gsymptom { border-color: rgba(224, 165, 61, 0.5); }
+.gtag { align-self: flex-start; font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.07em; padding: 3px 9px; border-radius: 999px; margin-bottom: 3px; }
+.gsymptom { border-color: rgba(224, 165, 61, 0.55); }
 .gsymptom code { color: var(--amber); }
-.gtag-warn { color: var(--amber); background: rgba(224, 165, 61, 0.12); }
-.gcause { border-color: rgba(240, 115, 106, 0.5); }
+.gtag-warn { color: var(--amber); background: rgba(224, 165, 61, 0.13); }
+.gcause { border-color: rgba(240, 115, 106, 0.55); }
 .gcause code { color: var(--red); }
-.gcause .gtag { color: var(--red); background: rgba(240, 115, 106, 0.12); }
-.graph-cap { position: absolute; bottom: -44px; left: 0; right: 0; font-size: 13px; color: var(--ink-dim);
-  text-align: center; }
+.gtag-cause { color: var(--red); background: rgba(240, 115, 106, 0.13); }
+
+/* connector between nodes: a real element, so it always spans node-to-node */
+.glink { position: relative; height: 40px; margin-left: 26px; display: flex; align-items: center; }
+.gedge { position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--line-2); border-radius: 2px; }
+.glabel { position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  font-family: var(--mono); font-size: 11px; color: var(--ink-dim); background: var(--bg); padding: 0 6px; }
+
+/* ONE authored moment: a single trace sweeps upstream (symptom -> cause),
+   lighting each connector, and each node lifts as the trace reaches it. */
+.gedge::after { content: ""; position: absolute; inset: 0; background: var(--blue); border-radius: 2px;
+  transform: scaleY(0); transform-origin: bottom; }
+.gnode { opacity: 0; transform: translateY(6px); }
+@media (prefers-reduced-motion: no-preference) {
+  /* order of the sweep: bottom symptom first, then up to the cause */
+  .gsymptom { animation: settle 0.45s var(--ease) 0.15s forwards; }
+  .chain .glink:last-of-type .gedge::after { animation: trace 0.45s var(--ease) 0.6s forwards; }
+  .chain .gnode:nth-child(3) { animation: settle 0.45s var(--ease) 1.0s forwards; }
+  .chain .glink:first-of-type .gedge::after { animation: trace 0.45s var(--ease) 1.45s forwards; }
+  .gcause { animation: settle 0.5s var(--ease) 1.85s forwards; }
+  .gcause { will-change: transform, opacity; }
+}
+@keyframes trace { to { transform: scaleY(1); } }
+@keyframes settle { to { opacity: 1; transform: translateY(0); } }
+
+.graph-cap { margin-top: 40px; font-size: 13px; color: var(--ink-dim); text-align: center; }
 .graph-cap code { color: var(--ink-soft); font-size: 0.92em; }
 
 /* ---------- sections ---------- */
@@ -234,7 +245,7 @@ h3 { font-size: 1.15rem; letter-spacing: -0.015em; font-weight: 600; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .edge, .gnode { animation: none; opacity: 1; stroke-dashoffset: 0; }
-  .gnode { transform: translateX(-50%); }
+  .gnode { opacity: 1; transform: none; }
+  .gedge::after { transform: scaleY(1); }
   * { transition-duration: 0.01ms !important; }
 }

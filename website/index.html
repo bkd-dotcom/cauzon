@@ -65,36 +65,28 @@
         </div>
       </div>
 
-      <!-- SIGNATURE: the lineage graph, telling the whole story at a glance -->
+      <!-- SIGNATURE: the lineage graph, telling the whole story at a glance.
+           Built as one in-flow column so nodes and connectors always align. -->
       <figure class="graph" aria-labelledby="graph-cap">
-        <svg viewBox="0 0 320 300" role="img" aria-hidden="true" class="graph-svg">
-          <defs>
-            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M0 0 L10 5 L0 10 z" fill="currentColor" />
-            </marker>
-          </defs>
-          <!-- edges (drawn upstream: symptom at bottom, cause at top) -->
-          <g class="edges">
-            <line x1="160" y1="70" x2="160" y2="128" class="edge lit" marker-end="url(#arrow)" />
-            <line x1="160" y1="170" x2="160" y2="228" class="edge lit" marker-end="url(#arrow)" />
-          </g>
-        </svg>
-        <!-- node cards positioned over the svg -->
-        <div class="gnode gcause" style="top:2%">
-          <span class="gtag">root cause</span>
-          <code translate="no">raw_trips</code>
-          <span class="gmeta">ingestion stalled · 51h stale</span>
+        <div class="chain">
+          <div class="gnode gcause">
+            <span class="gtag gtag-cause">root cause</span>
+            <code translate="no">raw_trips</code>
+            <span class="gmeta">ingestion stalled &middot; 51h stale</span>
+          </div>
+          <div class="glink"><span class="gedge"></span><span class="glabel">feeds</span></div>
+          <div class="gnode">
+            <code translate="no">trips_cleaned</code>
+            <span class="gmeta">passes the fault through</span>
+          </div>
+          <div class="glink"><span class="gedge"></span><span class="glabel">feeds</span></div>
+          <div class="gnode gsymptom">
+            <span class="gtag gtag-warn">symptom</span>
+            <code translate="no">daily_revenue</code>
+            <span class="gmeta">volume &minus;40% &middot; assertion failed</span>
+          </div>
         </div>
-        <div class="gnode" style="top:37%">
-          <code translate="no">trips_cleaned</code>
-          <span class="gmeta">passes the fault through</span>
-        </div>
-        <div class="gnode gsymptom" style="top:72%">
-          <span class="gtag gtag-warn">symptom</span>
-          <code translate="no">daily_revenue</code>
-          <span class="gmeta">volume −40% · assertion failed</span>
-        </div>
-        <figcaption id="graph-cap" class="graph-cap">Cauzon traces the symptom on <code translate="no">daily_revenue</code> up two hops to its origin.</figcaption>
+        <figcaption id="graph-cap" class="graph-cap">Cauzon traced the failing <code translate="no">daily_revenue</code> assertion up two hops to its origin.</figcaption>
       </figure>
     </div>
   </section>
