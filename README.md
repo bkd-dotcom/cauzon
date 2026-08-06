@@ -12,6 +12,18 @@ the next person — or agent — inherits the answer instead of re-deriving it.
 > Built for **Build with DataHub: The Agent Hackathon** — *Agents That Do Real
 > Work*.
 
+**Try it — nothing to install:** [binaydalai.me/cauzon](https://binaydalai.me/cauzon/)
+· [run an investigation](https://binaydalai.me/cauzon/investigate/)
+
+The app talks to a live agent on Cloud Run, streaming each reasoning step over a
+WebSocket as it happens. The header states exactly what you are looking at —
+`Live agent · demo catalog` here, because the catalog is the planted demo graph
+rather than a real DataHub instance. The agent itself is real either way:
+`MCPDataHubClient` normalises MCP responses into the same shape the mock returns,
+so the ranking, the origin rule and the proof gate are identical against a live
+DataHub. If the backend is ever unavailable the app replays a recorded run of the
+same agent, and says so.
+
 ![The lineage spine: marketing_spend rejected for having no path to the symptom, raw_trips proven](docs/images/lineage-spine.png)
 
 **That image is the whole argument.** `marketing_spend` is the most suspicious
