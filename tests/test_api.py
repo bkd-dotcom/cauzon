@@ -26,10 +26,45 @@ SCHEMA_CHANGE = "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales
 FANOUT = "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)"
 
 
-def test_health_reports_the_active_backend():
+def test_health_reports_what_this_deployment_actually_is():
+    """The UI states these fields verbatim, so they are part of the contract."""
     body = client.get("/api/health").json()
     assert body["status"] == "ok"
     assert body["datahub_backend"] == "mock"
+    # The mock catalog is in-memory, so there is nothing to protect.
+    assert body["write_back_allowed"] is True
+    assert body["datahub_ui_url"] is None
+
+
+def test_datahub_ui_url_is_normalised(monkeypatch):
+    monkeypatch.setenv("CAUZON_DATAHUB_UI_URL", "https://datahub.example.com/")
+    assert (
+        client.get("/api/health").json()["datahub_ui_url"]
+        == "https://datahub.example.com"
+    )
+
+
+def test_a_real_catalog_is_read_only_unless_explicitly_permitted(monkeypatch):
+    """A public deployment must not let visitors mutate someone's metadata."""
+    monkeypatch.setenv("CAUZON_DATAHUB_BACKEND", "mcp")
+    monkeypatch.delenv("CAUZON_ALLOW_WRITEBACK", raising=False)
+    assert client.get("/api/health").json()["write_back_allowed"] is False
+
+    monkeypatch.setenv("CAUZON_ALLOW_WRITEBACK", "1")
+    assert client.get("/api/health").json()["write_back_allowed"] is True
+
+
+def test_client_cannot_grant_itself_writeback_the_deployment_withheld(monkeypatch):
+    """write_back=true in the request must not override the server's policy."""
+    import backend.main as main
+
+    monkeypatch.setattr(main, "_writeback_allowed", lambda: False)
+    body = client.post(
+        "/api/investigate",
+        json={"urn": FRESHNESS, "title": "t", "write_back": True},
+    ).json()
+    assert body["grounded"] is True  # still investigates
+    assert body["write_backs"] == []  # but wrote nothing
 
 
 def test_incident_queue_exposes_every_scenario():

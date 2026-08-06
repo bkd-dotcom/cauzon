@@ -55,6 +55,29 @@ def _using_mock() -> bool:
     return os.getenv("CAUZON_DATAHUB_BACKEND", "mock") == "mock"
 
 
+def _writeback_allowed() -> bool:
+    """Whether this deployment may mutate its catalog.
+
+    The mock catalog is in-memory per request, so there is nothing to protect.
+    A **real** DataHub is shared and durable: a public deployment where anyone can
+    press Investigate would accumulate duplicate dossiers, so write-back against
+    `mcp` is opt-in via CAUZON_ALLOW_WRITEBACK. Set it deliberately, once.
+    """
+    if _using_mock():
+        return True
+    return os.getenv("CAUZON_ALLOW_WRITEBACK", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def _datahub_ui_url() -> str | None:
+    """Base URL of the DataHub UI, so findings can be verified at the source."""
+    url = os.getenv("CAUZON_DATAHUB_UI_URL", "").strip()
+    return url.rstrip("/") or None
+
+
 def _agent(urn: str | None = None) -> CauzonAgent:
     """Fresh agent per request, so captured write-backs stay isolated.
 
@@ -70,9 +93,19 @@ def _agent(urn: str | None = None) -> CauzonAgent:
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
-    backend = os.getenv("CAUZON_DATAHUB_BACKEND", "mock")
-    return {"status": "ok", "datahub_backend": backend}
+def health() -> dict[str, Any]:
+    """What this deployment actually is.
+
+    The UI reads every field here and states it plainly. A tool whose entire
+    argument is "only claim what you can prove" should not be vague about whether
+    its own catalog is real.
+    """
+    return {
+        "status": "ok",
+        "datahub_backend": os.getenv("CAUZON_DATAHUB_BACKEND", "mock"),
+        "write_back_allowed": _writeback_allowed(),
+        "datahub_ui_url": _datahub_ui_url(),
+    }
 
 
 @app.get("/api/incidents")
@@ -98,7 +131,9 @@ def investigate(req: InvestigateRequest) -> dict[str, Any]:
     diagnosis = agent.investigate(
         incident,
         on_event=lambda ev: trace.append(ev.to_dict()),
-        write_back=req.write_back,
+        # A client may decline write-back but cannot grant itself permission the
+        # deployment withheld.
+        write_back=req.write_back and _writeback_allowed(),
     )
     result = diagnosis.to_dict()
     result["trace"] = trace
@@ -129,7 +164,10 @@ async def ws_investigate(ws: WebSocket) -> None:
         # Run the (sync) agent in a thread so we can stream events concurrently.
         async def run() -> Any:
             diag = await asyncio.to_thread(
-                agent.investigate, incident, on_event, req.get("write_back", True)
+                agent.investigate,
+                incident,
+                on_event,
+                bool(req.get("write_back", True)) and _writeback_allowed(),
             )
             loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
             return diag

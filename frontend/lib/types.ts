@@ -123,6 +123,21 @@ export type WriteBack =
   | { op: "add_tags"; urn: string; tags: string[] }
   | { op: "update_description"; urn: string; description: string };
 
+/** What the backend reports about itself, from GET /api/health. */
+export interface Health {
+  status: string;
+  /** "mock" = planted in-memory graph. "mcp" = a real DataHub instance. */
+  datahub_backend: "mock" | "mcp";
+  write_back_allowed: boolean;
+  /** Base URL of the DataHub UI, when there is a real one to link to. */
+  datahub_ui_url: string | null;
+}
+
+/** Deep link to an asset in the DataHub UI, so a finding can be checked. */
+export function datahubAssetUrl(uiBase: string, urn: string): string {
+  return `${uiBase.replace(/\/$/, "")}/dataset/${encodeURIComponent(urn)}/`;
+}
+
 /** A node as the lineage graph needs it — resolved from trace + diagnosis. */
 export interface SpineNode {
   urn: string;

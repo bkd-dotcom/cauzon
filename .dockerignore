@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.pytest_cache
+__pycache__
+*.pyc
+frontend
+docs
+demo
+examples
+contrib
+tests
+scripts
+next-app-template
+.cursor
+.mcp.json

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { mockIncidents, replayInvestigation } from "./mockInvestigation";
-import type { Diagnosis, Incident, TraceEvent } from "./types";
+import type { Diagnosis, Health, Incident, TraceEvent } from "./types";
 
 const API = process.env.NEXT_PUBLIC_CAUZON_API ?? "http://localhost:8000";
 
@@ -16,6 +16,10 @@ export type Source = "probing" | "live" | "replay";
 
 export interface InvestigationState {
   source: Source;
+  /** Non-null in live mode: what the backend says it is connected to. */
+  health: Health | null;
+  writeBack: boolean;
+  setWriteBack: (value: boolean) => void;
   incidents: Incident[];
   selected: Incident | null;
   select: (incident: Incident) => void;
@@ -27,6 +31,8 @@ export interface InvestigationState {
 
 export function useInvestigation(): InvestigationState {
   const [source, setSource] = useState<Source>("probing");
+  const [health, setHealth] = useState<Health | null>(null);
+  const [writeBack, setWriteBack] = useState(true);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selected, setSelected] = useState<Incident | null>(null);
   const [trace, setTrace] = useState<TraceEvent[]>([]);
@@ -46,6 +52,14 @@ export function useInvestigation(): InvestigationState {
 
     fetch(`${API}/api/health`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("unhealthy"))))
+      .then((info: Health) => {
+        if (cancelled) return info;
+        setHealth(info);
+        // Against a real, shared catalog, default to not writing. A visitor
+        // should have to opt in before mutating someone's metadata.
+        setWriteBack(info.datahub_backend === "mock" && info.write_back_allowed);
+        return info;
+      })
       .then(() => fetch(`${API}/api/incidents`))
       .then((r) => r.json())
       .then((data: Incident[]) => {
@@ -109,7 +123,7 @@ export function useInvestigation(): InvestigationState {
       return;
     }
 
-    const body = JSON.stringify({ ...selected, write_back: true });
+    const body = JSON.stringify({ ...selected, write_back: writeBack });
 
     const viaPost = () => {
       fetch(`${API}/api/investigate`, {
@@ -160,10 +174,13 @@ export function useInvestigation(): InvestigationState {
     } catch {
       viaPost();
     }
-  }, [selected, source, teardown]);
+  }, [selected, source, teardown, writeBack]);
 
   return {
     source,
+    health,
+    writeBack,
+    setWriteBack,
     incidents,
     selected,
     select,

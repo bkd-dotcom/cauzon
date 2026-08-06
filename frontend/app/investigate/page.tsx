@@ -17,11 +17,14 @@ import {
 } from "@/components/panels";
 import { buildSpine } from "@/lib/spine";
 import { useInvestigation } from "@/lib/useInvestigation";
-import type { SpineNode } from "@/lib/types";
+import { datahubAssetUrl, type Health, type SpineNode } from "@/lib/types";
 
 export default function InvestigatePage() {
   const {
     source,
+    health,
+    writeBack,
+    setWriteBack,
     incidents,
     selected,
     select,
@@ -37,7 +40,7 @@ export default function InvestigatePage() {
 
   return (
     <div className="mx-auto max-w-[1180px] px-5 pb-24 sm:px-8">
-      <Header source={source} />
+      <Header source={source} health={health} />
 
       <main id="main" className="space-y-4">
         {/* ---- incident queue -------------------------------------------- */}
@@ -82,6 +85,26 @@ export default function InvestigatePage() {
                 );
               })}
             </div>
+          )}
+
+          {health?.write_back_allowed && (
+            <label className="mt-4 flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={writeBack}
+                onChange={(e) => setWriteBack(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 accent-[var(--color-jade)]"
+              />
+              <span className="text-[12px] leading-snug text-bone-dim">
+                Write the finding back to the catalog
+                {health.datahub_backend === "mcp" && (
+                  <span className="mt-1 block text-muted">
+                    This tags a real asset and files a real document in DataHub.
+                    Leave it off to investigate without changing anything.
+                  </span>
+                )}
+              </span>
+            </label>
           )}
 
           <button
@@ -151,6 +174,16 @@ export default function InvestigatePage() {
                 <p className="m-0 text-2xl font-semibold text-jade">
                   {diagnosis.root_cause.name}
                 </p>
+                {health?.datahub_ui_url && (
+                  <a
+                    href={datahubAssetUrl(health.datahub_ui_url, diagnosis.root_cause.urn)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-block text-[11px] tracking-[0.1em] text-bone-dim uppercase no-underline hover:text-jade"
+                  >
+                    Verify in DataHub →
+                  </a>
+                )}
                 {diagnosis.narrative && (
                   <p className="prose-evidence mt-3 mb-0">{diagnosis.narrative}</p>
                 )}
@@ -209,7 +242,10 @@ export default function InvestigatePage() {
 
         {diagnosis?.write_backs && diagnosis.write_backs.length > 0 && (
           <Panel title="Written back to DataHub">
-            <WritebackPanel writes={diagnosis.write_backs} />
+            <WritebackPanel
+              writes={diagnosis.write_backs}
+              datahubUiUrl={health?.datahub_ui_url ?? null}
+            />
           </Panel>
         )}
       </main>
@@ -219,13 +255,23 @@ export default function InvestigatePage() {
   );
 }
 
-function Header({ source }: { source: "probing" | "live" | "replay" }) {
-  const label =
-    source === "live"
-      ? "Live backend"
+function Header({
+  source,
+  health,
+}: {
+  source: "probing" | "live" | "replay";
+  health: Health | null;
+}) {
+  // Three distinct truths, and the UI should not blur them: is a backend there,
+  // is the agent really executing, and is the catalog real.
+  const { label, tone } =
+    source === "probing"
+      ? { label: "Connecting…", tone: "bg-muted" }
       : source === "replay"
-        ? "Recorded agent run"
-        : "Connecting…";
+        ? { label: "Recorded agent run", tone: "bg-amber" }
+        : health?.datahub_backend === "mcp"
+          ? { label: "Live agent · real DataHub", tone: "bg-jade" }
+          : { label: "Live agent · demo catalog", tone: "bg-jade" };
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-4 py-6">
@@ -237,23 +283,21 @@ function Header({ source }: { source: "probing" | "live" | "replay" }) {
           path-grounded RCA for DataHub
         </span>
       </div>
-      <div className="flex items-center gap-2" title={sourceHint(source)}>
-        <span
-          aria-hidden
-          className={`h-1.5 w-1.5 rounded-full ${
-            source === "live" ? "bg-jade" : source === "replay" ? "bg-amber" : "bg-muted"
-          }`}
-        />
+      <div className="flex items-center gap-2" title={sourceHint(source, health)}>
+        <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${tone}`} />
         <span className="label">{label}</span>
       </div>
     </header>
   );
 }
 
-function sourceHint(source: string): string {
-  if (source === "live") return "Connected to the FastAPI backend.";
+function sourceHint(source: string, health: Health | null): string {
   if (source === "replay")
     return "No backend reachable, so this replays a recorded run of the real agent. Start the backend to investigate live.";
+  if (source === "live")
+    return health?.datahub_backend === "mcp"
+      ? "The agent is executing live against a real DataHub instance."
+      : "The agent is executing live against the planted demo catalog. The agent code path is identical against a real DataHub.";
   return "Checking whether a backend is reachable.";
 }
 

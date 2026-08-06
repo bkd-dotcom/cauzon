@@ -12,6 +12,7 @@
 import {
   PHASE_LABELS,
   SIGNAL_LABELS,
+  datahubAssetUrl,
   shortName,
   type ConfidenceBreakdown,
   type Diagnosis,
@@ -256,7 +257,14 @@ export function RecurrencePanel({ recurrence }: { recurrence: Recurrence }) {
 }
 
 /** Exactly what changed in DataHub. Receipts, not a summary. */
-export function WritebackPanel({ writes }: { writes: WriteBack[] }) {
+export function WritebackPanel({
+  writes,
+  datahubUiUrl = null,
+}: {
+  writes: WriteBack[];
+  /** When a real DataHub is behind this, every receipt becomes checkable. */
+  datahubUiUrl?: string | null;
+}) {
   return (
     <div className="space-y-3">
       <ul className="m-0 list-none space-y-2 p-0">
@@ -269,6 +277,16 @@ export function WritebackPanel({ writes }: { writes: WriteBack[] }) {
                 `${write.tags.join(", ")} → ${shortName(write.urn)}`}
               {write.op === "update_description" && shortName(write.urn)}
             </span>
+            {datahubUiUrl && write.op !== "save_document" && (
+              <a
+                href={datahubAssetUrl(datahubUiUrl, write.urn)}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] tracking-[0.1em] text-muted uppercase no-underline hover:text-jade"
+              >
+                Check →
+              </a>
+            )}
           </li>
         ))}
       </ul>
