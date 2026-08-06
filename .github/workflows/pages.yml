@@ -34,6 +34,9 @@ jobs:
         # Pages serves the site from /<repo>, so asset paths need that prefix.
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          # The deployed backend. If it is ever removed, the app still works —
+          # it falls back to replaying recorded agent output.
+          NEXT_PUBLIC_CAUZON_API: ${{ vars.CAUZON_API_URL || 'https://cauzon-api-712918182816.us-central1.run.app' }}
         run: |
           npm ci
           npm run build
