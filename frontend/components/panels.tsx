@@ -272,7 +272,7 @@ export function WritebackPanel({ writes }: { writes: WriteBack[] }) {
           </li>
         ))}
       </ul>
-      <p className="prose-evidence m-0 text-muted">
+      <p className="prose-evidence m-0 border-t border-line pt-3 text-muted">
         The next person — or agent — inherits this without re-deriving it.
       </p>
     </div>

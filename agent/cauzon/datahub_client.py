@@ -505,6 +505,26 @@ class MockDataHubClient:
         return self._writes
 
 
+def all_mock_incidents() -> list[dict[str, Any]]:
+    """Every planted incident, across all scenarios.
+
+    A single client is pinned to one scenario, which is right for the CLI and for
+    tests. An API serving a UI wants the whole queue, so a reviewer can try each
+    fault type without restarting anything.
+    """
+    return [
+        MockDataHubClient(scenario=name).list_open_incidents()[0] for name in _SCENARIOS
+    ]
+
+
+def scenario_for_symptom(urn: str) -> Optional[str]:
+    """Which scenario owns this symptom asset, if any."""
+    for name, (_graph, symptom_urn, _incident) in _SCENARIOS.items():
+        if symptom_urn == urn:
+            return name
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # Real MCP backend — wraps datahub-agent-context (the Agent Context Kit).
 #

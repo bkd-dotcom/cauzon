@@ -25,6 +25,11 @@ from pydantic import BaseModel
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
 
 from cauzon.agent import CauzonAgent  # noqa: E402
+from cauzon.datahub_client import (  # noqa: E402
+    MockDataHubClient,
+    all_mock_incidents,
+    scenario_for_symptom,
+)
 from cauzon.models import Incident, TraceEvent  # noqa: E402
 
 app = FastAPI(title="Cauzon API", version="0.1.0")
@@ -46,8 +51,21 @@ class InvestigateRequest(BaseModel):
     write_back: bool = True
 
 
-def _agent() -> CauzonAgent:
-    # Fresh agent (and client) per request keeps captured write-backs isolated.
+def _using_mock() -> bool:
+    return os.getenv("CAUZON_DATAHUB_BACKEND", "mock") == "mock"
+
+
+def _agent(urn: str | None = None) -> CauzonAgent:
+    """Fresh agent per request, so captured write-backs stay isolated.
+
+    On the mock backend the API serves all three planted incidents at once, so
+    the agent is pinned to whichever scenario owns the symptom being
+    investigated rather than to the process-wide env var.
+    """
+    if urn and _using_mock():
+        scenario = scenario_for_symptom(urn)
+        if scenario:
+            return CauzonAgent(client=MockDataHubClient(scenario=scenario))
     return CauzonAgent()
 
 
@@ -59,12 +77,16 @@ def health() -> dict[str, str]:
 
 @app.get("/api/incidents")
 def list_incidents() -> list[dict[str, Any]]:
+    # The mock backend has one incident per scenario; surface the whole queue so
+    # every fault type is reachable without restarting the server.
+    if _using_mock():
+        return all_mock_incidents()
     return _agent().client.list_open_incidents()
 
 
 @app.post("/api/investigate")
 def investigate(req: InvestigateRequest) -> dict[str, Any]:
-    agent = _agent()
+    agent = _agent(req.urn)
     incident = Incident(
         urn=req.urn,
         title=req.title,
@@ -90,7 +112,7 @@ async def ws_investigate(ws: WebSocket) -> None:
     await ws.accept()
     try:
         req = await ws.receive_json()
-        agent = _agent()
+        agent = _agent(req.get("urn"))
         incident = Incident(
             urn=req["urn"],
             title=req.get("title", ""),
