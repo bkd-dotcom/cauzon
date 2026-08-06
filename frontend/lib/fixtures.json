@@ -1,0 +1,875 @@
+{
+  "freshness": {
+    "incident": {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)",
+      "title": "daily_revenue is 40% below expected volume",
+      "description": "The Looker revenue dashboard shows a sharp drop. A volume assertion on daily_revenue failed this morning.",
+      "failed_assertion": "row_count within 10% of 7-day average",
+      "detected_at": "today 08:04"
+    },
+    "result": {
+      "incident": {
+        "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)",
+        "title": "daily_revenue is 40% below expected volume",
+        "description": "The Looker revenue dashboard shows a sharp drop. A volume assertion on daily_revenue failed this morning.",
+        "failed_assertion": "row_count within 10% of 7-day average",
+        "detected_at": "today 08:04"
+      },
+      "root_cause": {
+        "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+        "name": "raw_trips",
+        "hops_from_symptom": 2,
+        "signals": [
+          "freshness_lag",
+          "volume_anomaly"
+        ],
+        "score": 5.0,
+        "evidence_notes": [
+          "Freshness 51h exceeds the 24h SLA (+27h stale).",
+          "Row count changed -100% vs baseline.",
+          "No upstream shows this fault \u2014 the fault appears to originate here."
+        ],
+        "is_origin": true,
+        "rejected_reason": null,
+        "owner": "data-platform@example.com"
+      },
+      "proof_path": {
+        "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)",
+        "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+        "nodes": [
+          "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+          "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)",
+          "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)"
+        ],
+        "edges": [
+          {
+            "from": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+            "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)",
+            "via_query": "CREATE OR REPLACE TABLE trips_cleaned AS SELECT * FROM raw_trips WHERE fare_amount > 0"
+          },
+          {
+            "from": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)",
+            "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)",
+            "via_query": "CREATE OR REPLACE TABLE daily_revenue AS SELECT trip_date, SUM(fare_amount) AS revenue FROM trips_cleaned GROUP BY trip_date"
+          }
+        ],
+        "transform_sql": "CREATE OR REPLACE TABLE trips_cleaned AS SELECT * FROM raw_trips WHERE fare_amount > 0",
+        "causal_edge_index": 0,
+        "grounding": "path_and_transform",
+        "grounding_label": "Path + transform proven",
+        "verified": true
+      },
+      "ranked_candidates": [
+        {
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.marketing_spend,PROD)",
+          "name": "marketing_spend",
+          "hops_from_symptom": 2,
+          "signals": [
+            "freshness_lag",
+            "volume_anomaly",
+            "schema_change"
+          ],
+          "score": 8.0,
+          "evidence_notes": [
+            "Freshness 62h exceeds the 24h SLA (+38h stale).",
+            "Row count changed -88% vs baseline.",
+            "Column `campaign` renamed to `campaign_id` 4 hours ago.",
+            "No upstream shows this fault \u2014 the fault appears to originate here."
+          ],
+          "is_origin": true,
+          "rejected_reason": "No lineage path connects this asset to the symptom, so the claim cannot be grounded.",
+          "owner": null
+        },
+        {
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+          "name": "raw_trips",
+          "hops_from_symptom": 2,
+          "signals": [
+            "freshness_lag",
+            "volume_anomaly"
+          ],
+          "score": 5.0,
+          "evidence_notes": [
+            "Freshness 51h exceeds the 24h SLA (+27h stale).",
+            "Row count changed -100% vs baseline.",
+            "No upstream shows this fault \u2014 the fault appears to originate here."
+          ],
+          "is_origin": true,
+          "rejected_reason": null,
+          "owner": "data-platform@example.com"
+        },
+        {
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)",
+          "name": "trips_cleaned",
+          "hops_from_symptom": 1,
+          "signals": [
+            "freshness_lag"
+          ],
+          "score": 1.8,
+          "evidence_notes": [
+            "Freshness 50h exceeds the 24h SLA (+26h stale).",
+            "Same fault is already present upstream in raw_trips \u2014 likely inherited rather than originated here."
+          ],
+          "is_origin": false,
+          "rejected_reason": null,
+          "owner": null
+        }
+      ],
+      "recommended_fix": {
+        "summary": "Restart the ingestion job feeding `raw_trips` and backfill the missing window; it is the upstream origin of the staleness. Owner: data-platform@example.com. This is failure #3 for this asset \u2014 treat the schedule or contract as the real defect, not just this occurrence.",
+        "action_kind": "command",
+        "action": "# 1. backfill the stalled source\ndatahub ingest -c raw_trips.yml\n# 2. replay downstream, in dependency order\n#    nyc.trips_cleaned \u2192 nyc.daily_revenue",
+        "action_note": "Downstream assets only recover once fresh data lands, so replay them in lineage order after the backfill completes."
+      },
+      "confidence": 0.85,
+      "confidence_breakdown": {
+        "grounding_factor": 1.0,
+        "signal_factor": 0.85,
+        "origin_factor": 1.0,
+        "grounding_reason": "Lineage path and the transform that carried the fault were both reconstructed.",
+        "signal_reason": "2 independent signal(s) agree: freshness lag, volume anomaly.",
+        "origin_reason": "No upstream asset shows this fault, so it originates here.",
+        "total": 0.85
+      },
+      "grounding": "path_and_transform",
+      "grounding_label": "Path + transform proven",
+      "grounded": true,
+      "recurrence": {
+        "asset_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+        "prior": [
+          {
+            "document_urn": "urn:li:document:(cauzon,rca-raw_trips-ingestion-stalled-2026-07-22)",
+            "title": "[Cauzon] RCA: raw_trips ingestion stalled (daily_revenue volume drop)",
+            "detected_at": "2026-07-22 06:11"
+          },
+          {
+            "document_urn": "urn:li:document:(cauzon,rca-raw_trips-ingestion-stalled-2026-08-01)",
+            "title": "[Cauzon] RCA: raw_trips ingestion stalled (daily_revenue volume drop)",
+            "detected_at": "2026-08-01 05:48"
+          }
+        ],
+        "count": 2,
+        "is_recurring": true
+      },
+      "narrative": "`raw_trips` is the origin of this incident, and the fault reached the symptom along nyc.raw_trips \u2192 nyc.trips_cleaned \u2192 nyc.daily_revenue. Path + transform proven at 85% confidence. Evidence: Freshness 51h exceeds the 24h SLA (+27h stale). `marketing_spend` scored higher on signals alone but was rejected: No lineage path connects this asset to the symptom, so the claim cannot be grounded. This asset has failed 2 time(s) before.",
+      "narrative_source": "template",
+      "trace": [
+        {
+          "phase": "detect",
+          "message": "Picked up incident: daily_revenue is 40% below expected volume",
+          "data": {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)",
+            "title": "daily_revenue is 40% below expected volume",
+            "description": "The Looker revenue dashboard shows a sharp drop. A volume assertion on daily_revenue failed this morning.",
+            "failed_assertion": "row_count within 10% of 7-day average",
+            "detected_at": "today 08:04"
+          }
+        },
+        {
+          "phase": "scope",
+          "message": "Pulled 3 upstream nodes within 3 hops.",
+          "data": {
+            "upstream": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)",
+                "hops": 1,
+                "name": "trips_cleaned"
+              },
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+                "hops": 2,
+                "name": "raw_trips"
+              },
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.marketing_spend,PROD)",
+                "hops": 2,
+                "name": "marketing_spend"
+              }
+            ],
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)"
+          }
+        },
+        {
+          "phase": "hypothesize",
+          "message": "Ranked 3 candidates; 3 carry evidence. Top: marketing_spend",
+          "data": {
+            "candidates": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.marketing_spend,PROD)",
+                "name": "marketing_spend",
+                "hops_from_symptom": 2,
+                "signals": [
+                  "freshness_lag",
+                  "volume_anomaly",
+                  "schema_change"
+                ],
+                "score": 8.0,
+                "evidence_notes": [
+                  "Freshness 62h exceeds the 24h SLA (+38h stale).",
+                  "Row count changed -88% vs baseline.",
+                  "Column `campaign` renamed to `campaign_id` 4 hours ago.",
+                  "No upstream shows this fault \u2014 the fault appears to originate here."
+                ],
+                "is_origin": true,
+                "rejected_reason": null,
+                "owner": null
+              },
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+                "name": "raw_trips",
+                "hops_from_symptom": 2,
+                "signals": [
+                  "freshness_lag",
+                  "volume_anomaly"
+                ],
+                "score": 5.0,
+                "evidence_notes": [
+                  "Freshness 51h exceeds the 24h SLA (+27h stale).",
+                  "Row count changed -100% vs baseline.",
+                  "No upstream shows this fault \u2014 the fault appears to originate here."
+                ],
+                "is_origin": true,
+                "rejected_reason": null,
+                "owner": null
+              },
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)",
+                "name": "trips_cleaned",
+                "hops_from_symptom": 1,
+                "signals": [
+                  "freshness_lag"
+                ],
+                "score": 1.8,
+                "evidence_notes": [
+                  "Freshness 50h exceeds the 24h SLA (+26h stale).",
+                  "Same fault is already present upstream in raw_trips \u2014 likely inherited rather than originated here."
+                ],
+                "is_origin": false,
+                "rejected_reason": null,
+                "owner": null
+              }
+            ]
+          }
+        },
+        {
+          "phase": "prove",
+          "message": "Rejected marketing_spend (score 8.0): no lineage path to the symptom \u2014 cannot ground the claim.",
+          "data": {
+            "rejected_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.marketing_spend,PROD)",
+            "reason": "No lineage path connects this asset to the symptom, so the claim cannot be grounded."
+          }
+        },
+        {
+          "phase": "prove",
+          "message": "Verified path to raw_trips across 2 lineage edge(s) \u2014 transform that carried the fault captured.",
+          "data": {
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)",
+            "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+            "nodes": [
+              "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+              "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)",
+              "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)"
+            ],
+            "edges": [
+              {
+                "from": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+                "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)",
+                "via_query": "CREATE OR REPLACE TABLE trips_cleaned AS SELECT * FROM raw_trips WHERE fare_amount > 0"
+              },
+              {
+                "from": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)",
+                "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)",
+                "via_query": "CREATE OR REPLACE TABLE daily_revenue AS SELECT trip_date, SUM(fare_amount) AS revenue FROM trips_cleaned GROUP BY trip_date"
+              }
+            ],
+            "transform_sql": "CREATE OR REPLACE TABLE trips_cleaned AS SELECT * FROM raw_trips WHERE fare_amount > 0",
+            "causal_edge_index": 0,
+            "grounding": "path_and_transform",
+            "grounding_label": "Path + transform proven",
+            "verified": true
+          }
+        },
+        {
+          "phase": "hypothesize",
+          "message": "raw_trips has 2 prior Cauzon dossier(s) \u2014 this is a recurring failure, not a one-off.",
+          "data": {
+            "asset_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+            "prior": [
+              {
+                "document_urn": "urn:li:document:(cauzon,rca-raw_trips-ingestion-stalled-2026-07-22)",
+                "title": "[Cauzon] RCA: raw_trips ingestion stalled (daily_revenue volume drop)",
+                "detected_at": "2026-07-22 06:11"
+              },
+              {
+                "document_urn": "urn:li:document:(cauzon,rca-raw_trips-ingestion-stalled-2026-08-01)",
+                "title": "[Cauzon] RCA: raw_trips ingestion stalled (daily_revenue volume drop)",
+                "detected_at": "2026-08-01 05:48"
+              }
+            ],
+            "count": 2,
+            "is_recurring": true
+          }
+        },
+        {
+          "phase": "writeback",
+          "message": "Wrote incident dossier to DataHub and tagged `raw_trips` as root cause. The next person or agent inherits this knowledge.",
+          "data": {
+            "document_urn": "urn:li:document:(cauzon,[cauzon]-rca:-daily_revenue-is-40%-below-expected-volume)",
+            "tagged_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)"
+          }
+        }
+      ],
+      "write_backs": [
+        {
+          "op": "save_document",
+          "urn": "urn:li:document:(cauzon,[cauzon]-rca:-daily_revenue-is-40%-below-expected-volume)",
+          "title": "[Cauzon] RCA: daily_revenue is 40% below expected volume",
+          "related": [
+            "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)",
+            "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)"
+          ]
+        },
+        {
+          "op": "add_tags",
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+          "tags": [
+            "root-cause",
+            "cauzon-diagnosed"
+          ]
+        },
+        {
+          "op": "update_description",
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+          "description": "\u26a0\ufe0f Cauzon identified this as the root cause of incident 'daily_revenue is 40% below expected volume' (Path + transform proven, 85% confidence). See dossier urn:li:document:(cauzon,[cauzon]-rca:-daily_revenue-is-40%-below-expected-volume)."
+        }
+      ]
+    }
+  },
+  "schema_change": {
+    "incident": {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)",
+      "title": "weekly_sales revenue is reporting $0 for all weeks",
+      "description": "The sales dashboard shows zero revenue everywhere, though order volume looks normal. A SQL assertion (revenue > 0) on weekly_sales is failing.",
+      "failed_assertion": "weekly_sales.revenue must be > 0",
+      "detected_at": "today 09:12"
+    },
+    "result": {
+      "incident": {
+        "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)",
+        "title": "weekly_sales revenue is reporting $0 for all weeks",
+        "description": "The sales dashboard shows zero revenue everywhere, though order volume looks normal. A SQL assertion (revenue > 0) on weekly_sales is failing.",
+        "failed_assertion": "weekly_sales.revenue must be > 0",
+        "detected_at": "today 09:12"
+      },
+      "root_cause": {
+        "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+        "name": "raw_orders",
+        "hops_from_symptom": 2,
+        "signals": [
+          "schema_change"
+        ],
+        "score": 3.0,
+        "evidence_notes": [
+          "Column `amount` renamed to `order_amount` 6 hours ago.",
+          "No upstream shows this fault \u2014 the fault appears to originate here."
+        ],
+        "is_origin": true,
+        "rejected_reason": null,
+        "owner": "commerce-platform@example.com"
+      },
+      "proof_path": {
+        "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)",
+        "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+        "nodes": [
+          "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+          "urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)",
+          "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)"
+        ],
+        "edges": [
+          {
+            "from": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+            "to": "urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)",
+            "via_query": "SELECT order_id, customer_id, amount AS revenue, created_at FROM raw_orders"
+          },
+          {
+            "from": "urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)",
+            "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)",
+            "via_query": "CREATE OR REPLACE TABLE weekly_sales AS SELECT date_trunc('week', created_at) AS wk, SUM(revenue) AS revenue FROM orders_enriched GROUP BY 1"
+          }
+        ],
+        "transform_sql": "SELECT order_id, customer_id, amount AS revenue, created_at FROM raw_orders",
+        "causal_edge_index": 0,
+        "grounding": "path_and_transform",
+        "grounding_label": "Path + transform proven",
+        "verified": true
+      },
+      "ranked_candidates": [
+        {
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+          "name": "raw_orders",
+          "hops_from_symptom": 2,
+          "signals": [
+            "schema_change"
+          ],
+          "score": 3.0,
+          "evidence_notes": [
+            "Column `amount` renamed to `order_amount` 6 hours ago.",
+            "No upstream shows this fault \u2014 the fault appears to originate here."
+          ],
+          "is_origin": true,
+          "rejected_reason": null,
+          "owner": "commerce-platform@example.com"
+        },
+        {
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)",
+          "name": "orders_enriched",
+          "hops_from_symptom": 1,
+          "signals": [],
+          "score": 0,
+          "evidence_notes": [],
+          "is_origin": true,
+          "rejected_reason": null,
+          "owner": null
+        }
+      ],
+      "recommended_fix": {
+        "summary": "Reconcile the schema change on `raw_orders` with its downstream consumers, then add a schema contract so the next rename fails loudly. Owner: commerce-platform@example.com.",
+        "action_kind": "sql",
+        "action": "SELECT order_id, customer_id, order_amount AS revenue, created_at FROM raw_orders",
+        "action_note": "The transform still reads `amount`, which no longer exists. Above is the same statement with `order_amount` substituted."
+      },
+      "confidence": 0.7,
+      "confidence_breakdown": {
+        "grounding_factor": 1.0,
+        "signal_factor": 0.7,
+        "origin_factor": 1.0,
+        "grounding_reason": "Lineage path and the transform that carried the fault were both reconstructed.",
+        "signal_reason": "1 independent signal(s) agree: schema change.",
+        "origin_reason": "No upstream asset shows this fault, so it originates here.",
+        "total": 0.7
+      },
+      "grounding": "path_and_transform",
+      "grounding_label": "Path + transform proven",
+      "grounded": true,
+      "recurrence": {
+        "asset_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+        "prior": [],
+        "count": 0,
+        "is_recurring": false
+      },
+      "narrative": "`raw_orders` is the origin of this incident, and the fault reached the symptom along shop.raw_orders \u2192 shop.orders_enriched \u2192 shop.weekly_sales. Path + transform proven at 70% confidence. Evidence: Column `amount` renamed to `order_amount` 6 hours ago.",
+      "narrative_source": "template",
+      "trace": [
+        {
+          "phase": "detect",
+          "message": "Picked up incident: weekly_sales revenue is reporting $0 for all weeks",
+          "data": {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)",
+            "title": "weekly_sales revenue is reporting $0 for all weeks",
+            "description": "The sales dashboard shows zero revenue everywhere, though order volume looks normal. A SQL assertion (revenue > 0) on weekly_sales is failing.",
+            "failed_assertion": "weekly_sales.revenue must be > 0",
+            "detected_at": "today 09:12"
+          }
+        },
+        {
+          "phase": "scope",
+          "message": "Pulled 2 upstream nodes within 3 hops.",
+          "data": {
+            "upstream": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)",
+                "hops": 1,
+                "name": "orders_enriched"
+              },
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+                "hops": 2,
+                "name": "raw_orders"
+              }
+            ],
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)"
+          }
+        },
+        {
+          "phase": "hypothesize",
+          "message": "Ranked 2 candidates; 1 carry evidence. Top: raw_orders",
+          "data": {
+            "candidates": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+                "name": "raw_orders",
+                "hops_from_symptom": 2,
+                "signals": [
+                  "schema_change"
+                ],
+                "score": 3.0,
+                "evidence_notes": [
+                  "Column `amount` renamed to `order_amount` 6 hours ago.",
+                  "No upstream shows this fault \u2014 the fault appears to originate here."
+                ],
+                "is_origin": true,
+                "rejected_reason": null,
+                "owner": null
+              },
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)",
+                "name": "orders_enriched",
+                "hops_from_symptom": 1,
+                "signals": [],
+                "score": 0,
+                "evidence_notes": [],
+                "is_origin": true,
+                "rejected_reason": null,
+                "owner": null
+              }
+            ]
+          }
+        },
+        {
+          "phase": "prove",
+          "message": "Verified path to raw_orders across 2 lineage edge(s) \u2014 transform that carried the fault captured.",
+          "data": {
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)",
+            "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+            "nodes": [
+              "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+              "urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)",
+              "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)"
+            ],
+            "edges": [
+              {
+                "from": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+                "to": "urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)",
+                "via_query": "SELECT order_id, customer_id, amount AS revenue, created_at FROM raw_orders"
+              },
+              {
+                "from": "urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)",
+                "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)",
+                "via_query": "CREATE OR REPLACE TABLE weekly_sales AS SELECT date_trunc('week', created_at) AS wk, SUM(revenue) AS revenue FROM orders_enriched GROUP BY 1"
+              }
+            ],
+            "transform_sql": "SELECT order_id, customer_id, amount AS revenue, created_at FROM raw_orders",
+            "causal_edge_index": 0,
+            "grounding": "path_and_transform",
+            "grounding_label": "Path + transform proven",
+            "verified": true
+          }
+        },
+        {
+          "phase": "writeback",
+          "message": "Wrote incident dossier to DataHub and tagged `raw_orders` as root cause. The next person or agent inherits this knowledge.",
+          "data": {
+            "document_urn": "urn:li:document:(cauzon,[cauzon]-rca:-weekly_sales-revenue-is-reporting-$0-for-all-weeks)",
+            "tagged_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)"
+          }
+        }
+      ],
+      "write_backs": [
+        {
+          "op": "save_document",
+          "urn": "urn:li:document:(cauzon,[cauzon]-rca:-weekly_sales-revenue-is-reporting-$0-for-all-weeks)",
+          "title": "[Cauzon] RCA: weekly_sales revenue is reporting $0 for all weeks",
+          "related": [
+            "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)",
+            "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)"
+          ]
+        },
+        {
+          "op": "add_tags",
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+          "tags": [
+            "root-cause",
+            "cauzon-diagnosed"
+          ]
+        },
+        {
+          "op": "update_description",
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+          "description": "\u26a0\ufe0f Cauzon identified this as the root cause of incident 'weekly_sales revenue is reporting $0 for all weeks' (Path + transform proven, 70% confidence). See dossier urn:li:document:(cauzon,[cauzon]-rca:-weekly_sales-revenue-is-reporting-$0-for-all-weeks)."
+        }
+      ]
+    }
+  },
+  "fanout": {
+    "incident": {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)",
+      "title": "session_metrics session counts tripled overnight",
+      "description": "Session counts are up 212% with no marketing change, and average session duration halved. Both look like a join fanout rather than real traffic.",
+      "failed_assertion": "session_metrics.sessions within 25% of 7-day average",
+      "detected_at": "today 07:41"
+    },
+    "result": {
+      "incident": {
+        "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)",
+        "title": "session_metrics session counts tripled overnight",
+        "description": "Session counts are up 212% with no marketing change, and average session duration halved. Both look like a join fanout rather than real traffic.",
+        "failed_assertion": "session_metrics.sessions within 25% of 7-day average",
+        "detected_at": "today 07:41"
+      },
+      "root_cause": {
+        "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+        "name": "user_dim",
+        "hops_from_symptom": 2,
+        "signals": [
+          "row_fanout"
+        ],
+        "score": 3.0,
+        "evidence_notes": [
+          "1,240 duplicate `user_id` values (3.1% of rows); the primary key is no longer unique after last night's reload.",
+          "No upstream shows this fault \u2014 the fault appears to originate here."
+        ],
+        "is_origin": true,
+        "rejected_reason": null,
+        "owner": "identity-team@example.com"
+      },
+      "proof_path": {
+        "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)",
+        "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+        "nodes": [
+          "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+          "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)",
+          "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)"
+        ],
+        "edges": [
+          {
+            "from": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+            "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)",
+            "via_query": "CREATE OR REPLACE TABLE sessions_joined AS SELECT e.session_id, e.duration_s, u.plan FROM raw_events e JOIN user_dim u ON e.user_id = u.user_id"
+          },
+          {
+            "from": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)",
+            "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)",
+            "via_query": "CREATE OR REPLACE TABLE session_metrics AS SELECT plan, COUNT(*) AS sessions, AVG(duration_s) AS avg_duration FROM sessions_joined GROUP BY plan"
+          }
+        ],
+        "transform_sql": "CREATE OR REPLACE TABLE sessions_joined AS SELECT e.session_id, e.duration_s, u.plan FROM raw_events e JOIN user_dim u ON e.user_id = u.user_id",
+        "causal_edge_index": 0,
+        "grounding": "path_and_transform",
+        "grounding_label": "Path + transform proven",
+        "verified": true
+      },
+      "ranked_candidates": [
+        {
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+          "name": "user_dim",
+          "hops_from_symptom": 2,
+          "signals": [
+            "row_fanout"
+          ],
+          "score": 3.0,
+          "evidence_notes": [
+            "1,240 duplicate `user_id` values (3.1% of rows); the primary key is no longer unique after last night's reload.",
+            "No upstream shows this fault \u2014 the fault appears to originate here."
+          ],
+          "is_origin": true,
+          "rejected_reason": null,
+          "owner": "identity-team@example.com"
+        },
+        {
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)",
+          "name": "sessions_joined",
+          "hops_from_symptom": 1,
+          "signals": [
+            "volume_anomaly"
+          ],
+          "score": 2.0,
+          "evidence_notes": [
+            "Row count changed +212% vs baseline.",
+            "No upstream shows this fault \u2014 the fault appears to originate here."
+          ],
+          "is_origin": true,
+          "rejected_reason": null,
+          "owner": null
+        },
+        {
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,app.raw_events,PROD)",
+          "name": "raw_events",
+          "hops_from_symptom": 2,
+          "signals": [],
+          "score": 0,
+          "evidence_notes": [],
+          "is_origin": true,
+          "rejected_reason": null,
+          "owner": null
+        }
+      ],
+      "recommended_fix": {
+        "summary": "De-duplicate `user_dim` and restore its key uniqueness \u2014 the duplicate keys are fanning out every downstream join. Owner: identity-team@example.com.",
+        "action_kind": "sql",
+        "action": "-- confirm the fanout before fixing it\nSELECT user_id, COUNT(*) AS copies\nFROM user_dim\nGROUP BY user_id\nHAVING COUNT(*) > 1\nORDER BY copies DESC;",
+        "action_note": "Add a uniqueness assertion on this key so a duplicate load fails at the source instead of silently inflating downstream metrics."
+      },
+      "confidence": 0.7,
+      "confidence_breakdown": {
+        "grounding_factor": 1.0,
+        "signal_factor": 0.7,
+        "origin_factor": 1.0,
+        "grounding_reason": "Lineage path and the transform that carried the fault were both reconstructed.",
+        "signal_reason": "1 independent signal(s) agree: row fanout.",
+        "origin_reason": "No upstream asset shows this fault, so it originates here.",
+        "total": 0.7
+      },
+      "grounding": "path_and_transform",
+      "grounding_label": "Path + transform proven",
+      "grounded": true,
+      "recurrence": {
+        "asset_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+        "prior": [],
+        "count": 0,
+        "is_recurring": false
+      },
+      "narrative": "`user_dim` is the origin of this incident, and the fault reached the symptom along app.user_dim \u2192 app.sessions_joined \u2192 app.session_metrics. Path + transform proven at 70% confidence. Evidence: 1,240 duplicate `user_id` values (3.1% of rows); the primary key is no longer unique after last night's reload.",
+      "narrative_source": "template",
+      "trace": [
+        {
+          "phase": "detect",
+          "message": "Picked up incident: session_metrics session counts tripled overnight",
+          "data": {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)",
+            "title": "session_metrics session counts tripled overnight",
+            "description": "Session counts are up 212% with no marketing change, and average session duration halved. Both look like a join fanout rather than real traffic.",
+            "failed_assertion": "session_metrics.sessions within 25% of 7-day average",
+            "detected_at": "today 07:41"
+          }
+        },
+        {
+          "phase": "scope",
+          "message": "Pulled 3 upstream nodes within 3 hops.",
+          "data": {
+            "upstream": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)",
+                "hops": 1,
+                "name": "sessions_joined"
+              },
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,app.raw_events,PROD)",
+                "hops": 2,
+                "name": "raw_events"
+              },
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+                "hops": 2,
+                "name": "user_dim"
+              }
+            ],
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)"
+          }
+        },
+        {
+          "phase": "hypothesize",
+          "message": "Ranked 3 candidates; 2 carry evidence. Top: user_dim",
+          "data": {
+            "candidates": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+                "name": "user_dim",
+                "hops_from_symptom": 2,
+                "signals": [
+                  "row_fanout"
+                ],
+                "score": 3.0,
+                "evidence_notes": [
+                  "1,240 duplicate `user_id` values (3.1% of rows); the primary key is no longer unique after last night's reload.",
+                  "No upstream shows this fault \u2014 the fault appears to originate here."
+                ],
+                "is_origin": true,
+                "rejected_reason": null,
+                "owner": null
+              },
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)",
+                "name": "sessions_joined",
+                "hops_from_symptom": 1,
+                "signals": [
+                  "volume_anomaly"
+                ],
+                "score": 2.0,
+                "evidence_notes": [
+                  "Row count changed +212% vs baseline.",
+                  "No upstream shows this fault \u2014 the fault appears to originate here."
+                ],
+                "is_origin": true,
+                "rejected_reason": null,
+                "owner": null
+              },
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,app.raw_events,PROD)",
+                "name": "raw_events",
+                "hops_from_symptom": 2,
+                "signals": [],
+                "score": 0,
+                "evidence_notes": [],
+                "is_origin": true,
+                "rejected_reason": null,
+                "owner": null
+              }
+            ]
+          }
+        },
+        {
+          "phase": "prove",
+          "message": "Verified path to user_dim across 2 lineage edge(s) \u2014 transform that carried the fault captured.",
+          "data": {
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)",
+            "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+            "nodes": [
+              "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+              "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)",
+              "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)"
+            ],
+            "edges": [
+              {
+                "from": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+                "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)",
+                "via_query": "CREATE OR REPLACE TABLE sessions_joined AS SELECT e.session_id, e.duration_s, u.plan FROM raw_events e JOIN user_dim u ON e.user_id = u.user_id"
+              },
+              {
+                "from": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)",
+                "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)",
+                "via_query": "CREATE OR REPLACE TABLE session_metrics AS SELECT plan, COUNT(*) AS sessions, AVG(duration_s) AS avg_duration FROM sessions_joined GROUP BY plan"
+              }
+            ],
+            "transform_sql": "CREATE OR REPLACE TABLE sessions_joined AS SELECT e.session_id, e.duration_s, u.plan FROM raw_events e JOIN user_dim u ON e.user_id = u.user_id",
+            "causal_edge_index": 0,
+            "grounding": "path_and_transform",
+            "grounding_label": "Path + transform proven",
+            "verified": true
+          }
+        },
+        {
+          "phase": "writeback",
+          "message": "Wrote incident dossier to DataHub and tagged `user_dim` as root cause. The next person or agent inherits this knowledge.",
+          "data": {
+            "document_urn": "urn:li:document:(cauzon,[cauzon]-rca:-session_metrics-session-counts-tripled-overnight)",
+            "tagged_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)"
+          }
+        }
+      ],
+      "write_backs": [
+        {
+          "op": "save_document",
+          "urn": "urn:li:document:(cauzon,[cauzon]-rca:-session_metrics-session-counts-tripled-overnight)",
+          "title": "[Cauzon] RCA: session_metrics session counts tripled overnight",
+          "related": [
+            "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)",
+            "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)"
+          ]
+        },
+        {
+          "op": "add_tags",
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+          "tags": [
+            "root-cause",
+            "cauzon-diagnosed"
+          ]
+        },
+        {
+          "op": "update_description",
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+          "description": "\u26a0\ufe0f Cauzon identified this as the root cause of incident 'session_metrics session counts tripled overnight' (Path + transform proven, 70% confidence). See dossier urn:li:document:(cauzon,[cauzon]-rca:-session_metrics-session-counts-tripled-overnight)."
+        }
+      ]
+    }
+  }
+}

@@ -85,7 +85,7 @@ class CauzonAgent:
                 on_event(ev)
 
         # 1) DETECT
-        emit("detect", f"Investigating incident on {incident.urn}", incident.to_dict())
+        emit("detect", f"Picked up incident: {incident.title}", incident.to_dict())
 
         # 2) SCOPE — minimal upstream subgraph
         upstream = self.client.get_lineage(incident.urn, direction="upstream", hops=3)
