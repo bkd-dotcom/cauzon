@@ -1,0 +1,72 @@
+
+🔍 Cauzon — path-grounded root-cause analysis
+
+[DETECT     ] Picked up incident: daily_revenue is 40% below expected volume
+[SCOPE      ] Pulled 3 upstream nodes within 3 hops.
+[HYPOTHESIZE] Ranked 3 candidates; 3 carry evidence. Top: marketing_spend
+[PROVE      ] Rejected marketing_spend (score 8.0): no lineage path to the symptom — cannot ground the claim.
+[PROVE      ] Verified path to raw_trips across 2 lineage edge(s) — transform that carried the fault captured.
+[HYPOTHESIZE] raw_trips has 2 prior Cauzon dossier(s) — this is a recurring failure, not a one-off.
+
+============================================================
+✅ ROOT CAUSE: raw_trips   [Path + transform proven]
+   Confidence: 85%
+     = grounding ×1.0 · signals ×0.85 · origin ×1.0
+   Owner: data-platform@example.com
+   Proof path: nyc.raw_trips -> nyc.trips_cleaned -> nyc.daily_revenue
+   Rejected by proof gate: marketing_spend (score 8.0)
+   Recurrence: 2 prior dossier(s)
+
+   Recommended fix: Restart the ingestion job feeding `raw_trips` and backfill the missing window; it is the upstream origin of the staleness. Owner: data-platform@example.com. This is failure #3 for this asset — treat the schedule or contract as the real defect, not just this occurrence.
+   ---
+   # 1. backfill the stalled source
+   datahub ingest -c raw_trips.yml
+   # 2. replay downstream, in dependency order
+   #    nyc.trips_cleaned → nyc.daily_revenue
+============================================================
+
+
+🔍 Cauzon — path-grounded root-cause analysis
+
+[DETECT     ] Picked up incident: weekly_sales revenue is reporting $0 for all weeks
+[SCOPE      ] Pulled 2 upstream nodes within 3 hops.
+[HYPOTHESIZE] Ranked 2 candidates; 1 carry evidence. Top: raw_orders
+[PROVE      ] Verified path to raw_orders across 2 lineage edge(s) — transform that carried the fault captured.
+
+============================================================
+✅ ROOT CAUSE: raw_orders   [Path + transform proven]
+   Confidence: 70%
+     = grounding ×1.0 · signals ×0.7 · origin ×1.0
+   Owner: commerce-platform@example.com
+   Proof path: shop.raw_orders -> shop.orders_enriched -> shop.weekly_sales
+
+   Recommended fix: Reconcile the schema change on `raw_orders` with its downstream consumers, then add a schema contract so the next rename fails loudly. Owner: commerce-platform@example.com.
+   ---
+   SELECT order_id, customer_id, order_amount AS revenue, created_at FROM raw_orders
+============================================================
+
+
+🔍 Cauzon — path-grounded root-cause analysis
+
+[DETECT     ] Picked up incident: session_metrics session counts tripled overnight
+[SCOPE      ] Pulled 3 upstream nodes within 3 hops.
+[HYPOTHESIZE] Ranked 3 candidates; 2 carry evidence. Top: user_dim
+[PROVE      ] Verified path to user_dim across 2 lineage edge(s) — transform that carried the fault captured.
+
+============================================================
+✅ ROOT CAUSE: user_dim   [Path + transform proven]
+   Confidence: 70%
+     = grounding ×1.0 · signals ×0.7 · origin ×1.0
+   Owner: identity-team@example.com
+   Proof path: app.user_dim -> app.sessions_joined -> app.session_metrics
+
+   Recommended fix: De-duplicate `user_dim` and restore its key uniqueness — the duplicate keys are fanning out every downstream join. Owner: identity-team@example.com.
+   ---
+   -- confirm the fanout before fixing it
+   SELECT user_id, COUNT(*) AS copies
+   FROM user_dim
+   GROUP BY user_id
+   HAVING COUNT(*) > 1
+   ORDER BY copies DESC;
+============================================================
+

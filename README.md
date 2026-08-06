@@ -3,164 +3,246 @@
 **Every root cause, proven from the source.**
 
 Cauzon is a path-grounded root-cause analysis agent for data incidents, built on
-[DataHub](https://datahub.com). When a data-quality assertion fails or a
-dashboard shows wrong numbers, Cauzon walks DataHub's lineage graph **upstream**,
-ranks candidate culprits from multimodal signals, and returns a root cause
-**only when it can prove the exact lineage path** connecting the cause to the
-symptom. It then writes the incident dossier back into DataHub so the next
-person — or agent — inherits the knowledge.
+[DataHub](https://datahub.com). When an assertion fails, it walks the lineage
+graph **upstream**, ranks candidate culprits from multimodal signals, and names a
+root cause **only when it can reconstruct the exact lineage path** connecting
+that cause to the symptom. Then it files the dossier back into the catalog, so
+the next person — or agent — inherits the answer instead of re-deriving it.
 
-> Built for **Build with DataHub: The Agent Hackathon** — *Agents That Do Real Work*.
+> Built for **Build with DataHub: The Agent Hackathon** — *Agents That Do Real
+> Work*.
 
-## Why Cauzon is different
+![The lineage spine: marketing_spend rejected for having no path to the symptom, raw_trips proven](docs/images/lineage-spine.png)
+
+**That image is the whole argument.** `marketing_spend` is the most suspicious
+asset in the graph — two days stale, 88% of its rows gone, a column renamed four
+hours ago — and it ranks first at 8.0. Cauzon throws it out, because no lineage
+edge connects it to the symptom. The real origin is `raw_trips` at 5.0, two hops
+upstream, and that one it proves: path reconstructed from real edges, plus the
+transform SQL that carried the fault downstream.
+
+A ranking is a hypothesis. A path is proof.
+
+## Why this is different
 
 Commercial data-observability tools **alert** you that something broke. They do
-not autonomously **localize the cause** by traversing lineage — and they never
-show you a *verifiable proof path*. Cauzon does both.
+not autonomously **localize the cause** by traversing lineage, and they never show
+you a verifiable proof path. The failure mode of every ranked-suspect approach is
+a confident, well-scored, wrong answer — and a diagnosis nobody can audit is
+worse than no diagnosis, because someone acts on it.
 
-The design is grounded in 2025–2026 top-venue research:
+Cauzon separates ranking from proving, and lets the second step veto the first.
 
-- **RCAFlow** (AAAI 2026) — hierarchical multi-agent root-cause planning.
-- **RCRank** (VLDB 2025) — multimodal ranking of root causes.
+### Grounding is a ladder, not a boolean
+
+Every finding states its own rung:
+
+| Level | Meaning |
+| --- | --- |
+| `PATH_AND_TRANSFORM` | Lineage path reconstructed **and** the transform that carried the fault captured |
+| `PATH_ONLY` | Path reconstructed, but DataHub retains no query history for the causal edge. Confidence drops; the dossier says so |
+| `UNGROUNDED` | Nothing connects the suspect to the symptom. No cause is named and nothing is written |
+
+Requiring transform SQL absolutely would look rigorous and be useless — real
+instances frequently have no query history. An artifact that declares its own
+epistemic status is both more honest and more useful than one that overclaims.
+
+### Confidence you can audit
+
+Confidence is a product of three named factors, each reported with its reason:
+
+```
+confidence = grounding_factor × signal_factor × origin_factor
+
+grounding: PATH_AND_TRANSFORM 1.0 | PATH_ONLY 0.75 | UNGROUNDED 0.0
+signals:   0.55 + 0.15 × distinct_signals, capped at 1.0
+origin:    1.0 if no upstream carries the fault, else 0.7 (may be inherited)
+```
+
+Every number the UI shows traces back to one of these.
+
+### The write-back is a loop, not a gesture
+
+Cauzon files each dossier with `save_document` — and reads prior dossiers back
+with `search_documents` on the next investigation. On the third stall of the same
+ingestion job, the recommendation stops being "backfill this window" and becomes
+"the schedule is the defect." The knowledge compounds.
+
+## Grounded in current research
+
+- **RCRank** (VLDB 2025) — multimodal ranking beats a single anomaly score.
 - **PAVE / OpenRCA 2.0** — the *ungrounded diagnosis* problem: a correct cause
-  with an unverified path is unacceptable. Cauzon **rejects unprovable
-  hypotheses** and refuses to write them back.
+  with an unverified path is unacceptable.
 - **DeepRoot** (ICML 2026) — separate *grounding* from *reasoning* to cut
-  hallucination.
+  hallucination. Implemented literally: the proof gate is deterministic code, and
+  the optional Claude layer only ever explains a verdict that is already settled.
+  It receives nothing ungrounded, cannot reach any decision field, and its output
+  is discarded if it invents a URN.
 
-## How it works — the investigation loop
+## The investigation loop
 
 | Phase | What Cauzon does | DataHub tools |
-|-------|------------------|---------------|
+| --- | --- | --- |
 | **Detect** | Pick up a failing assertion / incident | `search`, incidents |
 | **Scope** | Pull the minimal upstream subgraph (≤3 hops) | `get_lineage` |
-| **Hypothesize** | Rank culprits by freshness lag, volume anomaly, schema change | `get_entities`, `list_schema_fields` |
-| **Prove** | Accept a cause **only** with a verifiable lineage path + transform SQL | `get_lineage_paths_between`, `get_dataset_queries` |
-| **Write back** | Persist dossier, tag culprit, note owner | `save_document`, `add_tags`, `update_description` |
+| **Hypothesize** | Rank on freshness lag, volume anomaly, schema change, key fanout. A node scores as the *origin* when it carries the fault and none of its upstreams do | `get_entities`, `list_schema_fields` |
+| **Prove** | Reconstruct the path from real edges; capture the transform SQL | `get_lineage_paths_between`, `get_dataset_queries` |
+| **File** | Persist the dossier, tag the culprit, note the owner, read prior dossiers | `save_document`, `add_tags`, `update_description`, `search_documents` |
 
 ## Quickstart
 
-### 1. Run DataHub locally (optional for the mock demo)
+Cauzon ships a **mock backend** with three planted faults, so the whole app runs
+with zero infrastructure.
 
 ```bash
-datahub docker quickstart
-datahub init --username datahub --password datahub
-datahub datapack load showcase-ecommerce
-```
+# Agent + API
+python3 -m pip install -e .
+uvicorn backend.main:app --port 8000
 
-Cauzon ships with a **mock backend** containing a planted freshness fault, so you
-can run the full app with **zero infrastructure**. Switch to a real DataHub
-instance by setting `CAUZON_DATAHUB_BACKEND=mcp` and the MCP env vars.
-
-### 2. Backend (the agent + API)
-
-```bash
-python3 -m pip install -e .           # installs fastapi, uvicorn, pydantic
-uvicorn backend.main:app --port 8000  # http://localhost:8000
-# or run the agent straight from the terminal:
+# Or straight from the terminal
 PYTHONPATH=agent python3 -m cauzon.cli
+PYTHONPATH=agent python3 -m cauzon.cli --scenario fanout --no-writeback
 ```
 
-### 3. Frontend (web + installable mobile PWA)
-
 ```bash
+# Web UI (also an installable mobile PWA)
 cd frontend
 npm install
 npm run dev            # http://localhost:3000
 ```
 
-Set `NEXT_PUBLIC_CAUZON_API` if the backend isn't on `localhost:8000`.
+The UI works **without the backend running** — it replays recorded runs of the
+real agent in the browser, which is how the deployed demo functions. Set
+`NEXT_PUBLIC_CAUZON_API` to point it at a live backend.
 
-## Configuration
+### The three scenarios
 
-| Env var | Default | Meaning |
-|---------|---------|---------|
-| `CAUZON_DATAHUB_BACKEND` | `mock` | `mock` (planted-fault demo) or `mcp` (real DataHub) |
-| `CAUZON_MOCK_SCENARIO` | `freshness` | `freshness` or `schema_change` (mock backend only) |
-| `DATAHUB_GMS_URL` | `http://localhost:8080` | GMS endpoint (mcp backend) |
-| `DATAHUB_TOKEN` | — | DataHub personal access token (mcp backend) |
-| `CAUZON_CORS_ORIGINS` | `*` | Allowed CORS origins for the API |
+Each plants a fault a *different* signal has to catch, which is the point: the
+framework is not tuned to one demo.
 
-### Using the real DataHub backend
+| `--scenario` | Fault | Why it needs its own signal |
+| --- | --- | --- |
+| `freshness` (default) | Ingestion stalled two days ago; staleness propagates downstream | Also carries the ungroundable decoy that outranks the real cause |
+| `schema_change` | `amount` renamed to `order_amount`; the downstream transform still selects `amount` | Nothing is stale — no freshness or volume alert would fire |
+| `fanout` | A dimension table gains duplicate keys, so every join multiplies rows | Nothing is stale and nothing changed shape; only key uniqueness finds it |
+
+## Running against a real DataHub
 
 ```bash
-pip install -e ".[datahub]"      # installs datahub-agent-context + acryl-datahub
+pip install -e ".[datahub]"
 export CAUZON_DATAHUB_BACKEND=mcp
 export DATAHUB_GMS_URL=http://localhost:8080
-export DATAHUB_TOKEN=<your personal access token>   # from DataHub Settings → Access Tokens
+export DATAHUB_TOKEN=<personal access token>   # Settings → Access Tokens
 ```
 
 Write-back tools (`add_tags`, `update_description`, `save_document`) require the
-MCP server to run with `TOOLS_IS_MUTATION_ENABLED=true`. The
-`MCPDataHubClient` in `agent/cauzon/datahub_client.py` normalises every MCP
-response into the same shape the mock returns, so the agent logic is identical
-across backends.
+MCP server to run with `TOOLS_IS_MUTATION_ENABLED=true`. `MCPDataHubClient`
+normalises every MCP response into the same shape the mock returns, so the agent
+logic is identical across backends.
 
-**Verified live:** the MCP backend has been smoke-tested against a real
-`datahub docker quickstart` with the `showcase-ecommerce` datapack loaded —
-`search`, `get_entity`, `list_schema_fields`, `get_lineage`, and
-`get_dataset_queries` all return real catalog data. Reproduce with:
+**Verified live.** The MCP backend has been smoke-tested against a real
+`datahub docker quickstart` with the `showcase-ecommerce` datapack — `search`,
+`get_entity`, `list_schema_fields`, `get_lineage` and `get_dataset_queries` all
+return real catalog data:
 
 ```bash
 python scripts/mcp_smoke_test.py
 ```
 
-### End-to-end write-back against live DataHub (verified)
-
-A full grounded investigation *with write-back* has been run against a live
-instance. Reproduce:
+A full grounded investigation **with write-back** has also been run end to end:
 
 ```bash
-# 1. plant a demo lineage graph (raw_trips -> trips_cleaned -> daily_revenue -> dashboard)
-python scripts/ingest_demo_lineage.py
-# 2. investigate the planted incident and write the results back
-python scripts/run_live_writeback.py
+python scripts/ingest_demo_lineage.py   # plant raw_trips -> trips_cleaned -> daily_revenue
+python scripts/run_live_writeback.py    # investigate and write the results back
 ```
 
-This produced, on the live catalog:
-
-- `globalTags` on `raw_trips` → `root-cause`, `cauzon-diagnosed`
-- `editableDatasetProperties.description` → the incident note + dossier link
-- a `Document` entity → the full RCA dossier (title, evidence, proof path)
+That produced, on the live catalog: `globalTags` on `raw_trips`
+(`root-cause`, `cauzon-diagnosed`), an updated
+`editableDatasetProperties.description`, and a `Document` entity holding the full
+dossier. The aspects read back out of the running instance afterwards are in
+[`examples/live-proof/`](./examples/live-proof/).
 
 Two robustness details worth noting, both handled by `MCPDataHubClient`:
 
 - **Tag auto-creation** — DataHub rejects applying a tag whose entity does not
   exist, so `add_tags` emits a minimal `tagProperties` aspect first.
 - **Graph-index-independent lineage** — the lineage *search* API depends on the
-  graph index, which can lag (or stall on a constrained quickstart). When it
-  returns nothing, Cauzon falls back to walking the durable `upstreamLineage`
-  aspects directly, so RCA still works.
+  graph index, which can lag or stall on a constrained quickstart. When it
+  returns nothing, Cauzon walks the durable `upstreamLineage` aspects directly,
+  so RCA still works.
 
-> Tip: if GMS on `:8080` looks unreachable, make sure no other local process is
-> already bound to port 8080 before running `datahub docker quickstart`.
+> If GMS on `:8080` looks unreachable, check that nothing else is bound to port
+> 8080 before running `datahub docker quickstart`.
+
+## Configuration
+
+| Env var | Default | Meaning |
+| --- | --- | --- |
+| `CAUZON_DATAHUB_BACKEND` | `mock` | `mock` (planted faults) or `mcp` (real DataHub) |
+| `CAUZON_MOCK_SCENARIO` | `freshness` | `freshness`, `schema_change`, or `fanout` |
+| `DATAHUB_GMS_URL` | `http://localhost:8080` | GMS endpoint (`mcp` backend) |
+| `DATAHUB_TOKEN` | — | DataHub personal access token (`mcp` backend) |
+| `CAUZON_CORS_ORIGINS` | `*` | Allowed CORS origins for the API |
+| `CAUZON_LLM_NARRATION` | off | Set to `1` to let Claude write the dossier narrative |
+| `CAUZON_LLM_MODEL` | `claude-opus-5` | Model for the narration layer |
+| `NEXT_PUBLIC_CAUZON_API` | `http://localhost:8000` | Backend the frontend talks to |
+
+Narration is **opt-in** and needs `pip install -e ".[llm]"` plus an
+`ANTHROPIC_API_KEY`. Without it — the default — Cauzon uses deterministic
+templates, so tests are hermetic and a demo cannot fail on a network call.
+
+## Tests
+
+```bash
+pip install -e ".[dev]"
+pytest -q          # 45 tests
+```
+
+The suite is deliberately adversarial about the central claim: a hostile narrator
+cannot flip the verdict, a path without transform SQL downgrades instead of
+overclaiming, an evidence-free graph produces no write-back at all, and the
+better-scoring decoy must be rejected rather than blamed.
 
 ## Open-source contribution
 
-`contrib/datahub-skills-pr/` is a ready-to-PR **DataHub Skill** (`datahub-rca`)
-that teaches any MCP-connected agent (Claude Code, Cursor, Gemini CLI, …) to
-perform path-grounded RCA. It is formatted to match the conventions of
-[`datahub-project/datahub-skills`](https://github.com/datahub-project/datahub-skills)
-(verified against their `datahub-lineage` skill + `CONTRIBUTING.md`). See
-[`contrib/datahub-skills-pr/README.md`](./contrib/datahub-skills-pr/README.md)
-for exact fork/PR steps — contributing it triggers the hackathon OSS bonus.
+[`contrib/datahub-skills-pr/`](./contrib/datahub-skills-pr/) is a ready-to-PR
+**DataHub Skill** (`datahub-rca`) that teaches any MCP-connected agent — Claude
+Code, Cursor, Gemini CLI — to perform path-grounded RCA. It is formatted to match
+the conventions of
+[`datahub-project/datahub-skills`](https://github.com/datahub-project/datahub-skills),
+verified against that repo's `datahub-lineage` skill and `CONTRIBUTING.md`.
+
+It is scoped deliberately against the existing `datahub-lineage` skill: that one
+*traverses* lineage, this one *adjudicates* it — adding the proof gate, the
+grounding ladder, and the dossier write-back.
 
 ## Repository layout
 
 ```
 cauzon/
-├── LICENSE                    # Apache 2.0
-├── pyproject.toml
-├── agent/cauzon/              # the agent core (framework-agnostic)
-│   ├── agent.py               # detect → scope → hypothesize → prove → writeback
-│   ├── datahub_client.py      # MCP client + mock (planted-fault) backend
-│   ├── models.py
+├── agent/cauzon/              # the agent core (framework-agnostic, no LLM required)
+│   ├── agent.py               # detect → scope → hypothesize → prove → file
+│   ├── datahub_client.py      # MCP client + mock backend with three planted faults
+│   ├── reasoner.py            # optional Claude narration, structurally unable to decide
+│   ├── models.py              # grounding ladder, confidence factors, proof path
 │   └── cli.py
 ├── backend/main.py            # FastAPI + WebSocket live trace
-├── frontend/                  # Next.js PWA (web + mobile)
-├── contrib/datahub-skills-pr/ # ready-to-PR DataHub Skill (OSS bonus)
-├── examples/                  # real Cauzon-generated incident dossiers
-└── tests/                     # deterministic tests over the planted fault
+├── frontend/                  # Next.js app — landing page + the investigation UI
+│   ├── components/LineageSpine.tsx   # the proof, drawn as geometry
+│   └── lib/fixtures.json      # recorded agent output, replayed in the browser
+├── contrib/datahub-skills-pr/ # ready-to-PR DataHub Skill
+├── demo/                      # video script, submission text, CLI transcript
+├── examples/                  # real Cauzon-generated dossiers + live write-back proof
+├── scripts/                   # fixture/example generators, live smoke tests
+└── tests/                     # deterministic tests over the planted faults
+```
+
+`examples/` and `frontend/lib/fixtures.json` are **generated** from real agent
+runs, and CI fails if they drift:
+
+```bash
+PYTHONPATH=agent python scripts/build_examples.py
+PYTHONPATH=agent python scripts/build_fixtures.py
 ```
 
 ## License

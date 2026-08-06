@@ -5,7 +5,7 @@ This folder contains **raw evidence, captured directly from a running
 investigation and wrote its findings back into the live catalog.
 
 Everything here was pulled from DataHub's own APIs *after* the agent ran —
-independent confirmation that the writes actually landed, not just что the agent
+independent confirmation that the writes actually landed, not just that the agent
 claimed success.
 
 ## How it was produced

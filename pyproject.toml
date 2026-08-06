@@ -15,6 +15,9 @@ dependencies = [
 # Real DataHub hookup. Not needed for the mock demo.
 datahub = ["datahub-agent-context>=0.1", "acryl-datahub>=1.6"]
 dev = ["pytest>=8.0"]
+# Optional Claude layer for the dossier narrative. The agent falls back to
+# deterministic templates when this is absent, so it is never required.
+llm = ["anthropic>=0.40"]
 
 [project.scripts]
 cauzon = "cauzon.cli:main"

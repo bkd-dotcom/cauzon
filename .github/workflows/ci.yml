@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  agent:
+    name: Agent tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+      - name: Tests
+        run: pytest -q
+      - name: CLI runs every scenario end to end
+        run: |
+          for scenario in freshness schema_change fanout; do
+            echo "--- $scenario ---"
+            PYTHONPATH=agent python -m cauzon.cli --no-writeback --scenario "$scenario"
+          done
+
+  generated-artifacts:
+    name: Generated artifacts are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: python -m pip install --upgrade pip && pip install -e .
+      # The frontend replays recorded agent output and examples/ holds real
+      # dossiers. Both are generated, so a stale checkout means the demo no
+      # longer matches the agent — fail rather than ship a divergent claim.
+      - name: Regenerate
+        run: |
+          PYTHONPATH=agent python scripts/build_fixtures.py
+          PYTHONPATH=agent python scripts/build_examples.py
+      - name: Check for drift
+        run: |
+          if ! git diff --quiet; then
+            echo "::error::Generated artifacts are stale. Run scripts/build_fixtures.py and scripts/build_examples.py, then commit."
+            git diff --stat
+            exit 1
+          fi
+
+  frontend:
+    name: Frontend typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build

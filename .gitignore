@@ -26,3 +26,7 @@ npm-debug.log*
 .claude/
 skills-lock.json
 design-system/
+
+# Local editor / MCP tooling config, not part of the project
+.cursor/
+.mcp.json
