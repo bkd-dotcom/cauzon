@@ -56,14 +56,25 @@ signals:
 | Signal | How to detect | Weight |
 | --- | --- | --- |
 | Freshness lag | freshness exceeds the expected SLA | high |
-| Volume anomaly | row-count delta ≥ 20% vs baseline | medium |
 | Schema change | columns added / removed / retyped recently | high |
+| Key fanout | a join key is no longer unique, so downstream joins multiply rows | high |
+| Volume anomaly | row-count delta ≥ 20% vs baseline | medium |
 | Recent query change | the defining transform in **get_dataset_queries** changed recently | medium |
 
-**Heuristic that matters most:** the true root cause is usually the node
-*furthest upstream* that still carries a strong signal — the origin, not the
-intermediate victim that merely inherited the problem. Break ties toward greater
-upstream distance.
+Use more than one signal. A single anomaly score cannot distinguish these
+failure modes: a duplicate-key fanout involves nothing stale and no schema
+change, so a freshness-and-volume-only check misses it entirely.
+
+**The heuristic that matters most — find the origin, not the victim.** A node is
+the origin when it carries the fault and **none of its own upstreams do**. Check
+this explicitly: for a candidate showing freshness lag, call **get_lineage** with
+`max_hops=1` on that candidate and test whether any of its parents show the same
+signal. If one does, the candidate probably inherited the problem — penalise it
+and prefer the parent.
+
+Do not simply rank by hop distance. That is a proxy that only works on a clean
+chain, and it silently picks the wrong node as soon as the graph branches — for
+example when a table joins a healthy fact table to a broken dimension.
 
 ### 4. Prove — accept only a verifiable path (the critical step)
 
@@ -73,23 +84,48 @@ For your top candidate, call **get_lineage_paths_between**
 - If **no path** is returned, **reject the candidate** and move to the next one.
   Do not report an ungrounded cause.
 - If a path exists, use **get_dataset_queries** along the path to identify the
-  transform SQL that carried the fault downstream. The edge list + that SQL is
-  your proof.
+  transform SQL that carried the fault downstream. The edge on the path *leaving*
+  the culprit is the one that propagated the fault; that transform is your
+  strongest witness. The edge list plus that SQL is your proof.
 
 Only a candidate with a reconstructable path is accepted as the root cause.
 
+**State which rung of grounding you reached.** Query history is often absent, so
+distinguish the two honest outcomes instead of blurring them:
+
+| Grounding | When | What to report |
+| --- | --- | --- |
+| Path **and** transform | Edges reconstructed and the causal transform retrieved | Full proof |
+| Path **only** | Edges reconstructed, no query history for that edge | Report the path as proven and the transform as unavailable. Lower your stated confidence |
+| Ungrounded | No path | Reject the candidate |
+
+Do not present a path-only finding as a complete proof. Requiring the SQL
+absolutely would be useless on catalogs without query history; quietly treating
+its absence as success is worse.
+
 ### 5. Write back — persist the diagnosis so it's inherited
 
-Once you have a grounded root cause, contribute it back to the graph:
+**First, check whether this has happened before.** Call **search_documents** for
+prior dossiers naming the culprit (they exist if this skill has run before). If
+you find them, this is a recurring failure, and the recommendation changes: stop
+recommending a fix for this occurrence and start recommending a fix for whatever
+keeps allowing it — the schedule, the contract, the missing assertion. This is
+what makes the write-back a loop rather than a filing cabinet.
 
-- **save_document** — an incident dossier (symptom, evidence, proof path,
-  transform SQL, recommended fix). Use the template in
-  `templates/incident-dossier.template.md`.
+Then contribute the finding back to the graph:
+
+- **save_document** — an incident dossier (symptom, evidence, grounding level,
+  proof path, transform SQL, prior occurrences, recommended fix). Use the
+  template in `templates/incident-dossier.template.md`.
 - **add_tags** — tag the culprit `root-cause`.
 - **update_description** — note the incident + link the dossier on the culprit.
+- Record the **owner** from the culprit's ownership aspect in the dossier, so the
+  finding routes to a person rather than sitting in the catalog unread.
 
 If **no** candidate could be grounded, write nothing. Report that the cause
-could not be verified and escalate to a human.
+could not be verified and escalate to a human. Writing an unverified diagnosis
+into a catalog everyone reads is worse than writing nothing, because the next
+person inherits it as fact.
 
 ---
 
@@ -118,11 +154,17 @@ and re-run downstream transforms once fresh data lands."
 
 ## Guardrails
 
-- **No ungrounded diagnosis.** If you cannot reconstruct the path, say so.
-- **Prefer the origin.** Don't stop at the first anomalous node; the fault
-  usually starts further upstream.
-- **Write back only when grounded.** The catalog is shared truth — never
-  pollute it with a guess.
+- **No ungrounded diagnosis.** If you cannot reconstruct the path, say so. A
+  ranking is a hypothesis; only a path is proof. Be willing to reject the most
+  suspicious asset in the graph when nothing connects it to the symptom.
+- **Prefer the origin.** Don't stop at the first anomalous node. Check whether the
+  candidate's own upstreams show the same fault; if they do, it was inherited.
+- **State your grounding level.** Never present a path-only finding as a complete
+  proof, and never imply a transform was verified when no query history exists.
+- **Check for recurrence before recommending.** The third occurrence needs a
+  different fix from the first.
+- **Write back only when grounded.** The catalog is shared truth — never pollute
+  it with a guess. The next reader will treat whatever you write as fact.
 
 See `references/rca-signals-reference.md` for detailed signal heuristics and
 `references/grounding-reference.md` for the path-verification rules.

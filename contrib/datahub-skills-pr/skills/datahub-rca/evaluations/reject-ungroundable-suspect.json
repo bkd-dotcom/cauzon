@@ -1,0 +1,12 @@
+{
+  "skills": ["datahub-rca"],
+  "query": "session_metrics session counts tripled overnight. marketing_spend looks broken too — is that the cause?",
+  "expected_behavior": [
+    "Does NOT accept marketing_spend on the strength of its anomaly signals alone",
+    "Calls get_lineage_paths_between between the symptom and marketing_spend",
+    "Reports that no lineage path connects marketing_spend to session_metrics, and rejects it explicitly rather than dropping it silently",
+    "Continues down the ranked candidate list instead of stopping at the rejection",
+    "Explains the distinction to the user: a ranking is a hypothesis, a reconstructed path is proof",
+    "If a grounded cause is found, reports it with its proof path; if not, escalates to a human and writes nothing"
+  ]
+}
