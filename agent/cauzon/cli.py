@@ -37,7 +37,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--scenario",
-        choices=["freshness", "schema_change"],
+        choices=["freshness", "schema_change", "fanout"],
         help="Mock scenario to investigate (sets CAUZON_MOCK_SCENARIO).",
     )
     args = parser.parse_args()
@@ -52,14 +52,38 @@ def main() -> None:
 
     print("\n" + "=" * 60)
     if diagnosis.grounded and diagnosis.root_cause:
-        print(f"✅ GROUNDED ROOT CAUSE: {diagnosis.root_cause.name}")
+        cause = diagnosis.root_cause
+        print(f"✅ ROOT CAUSE: {cause.name}   [{diagnosis.grounding.label}]")
         print(f"   Confidence: {diagnosis.confidence:.0%}")
+        if diagnosis.confidence_breakdown:
+            b = diagnosis.confidence_breakdown
+            print(
+                f"     = grounding ×{b.grounding_factor}"
+                f" · signals ×{b.signal_factor}"
+                f" · origin ×{b.origin_factor}"
+            )
+        if cause.owner:
+            print(f"   Owner: {cause.owner}")
         if diagnosis.proof_path:
             path = " -> ".join(
                 n.split(",")[1] if "," in n else n for n in diagnosis.proof_path.nodes
             )
             print(f"   Proof path: {path}")
-        print(f"\n   Recommended fix: {diagnosis.recommended_fix}")
+
+        rejected = [c for c in diagnosis.ranked_candidates if c.rejected_reason]
+        for c in rejected:
+            print(f"   Rejected by proof gate: {c.name} (score {c.score})")
+
+        if diagnosis.recurrence and diagnosis.recurrence.is_recurring:
+            print(f"   Recurrence: {diagnosis.recurrence.count} prior dossier(s)")
+
+        fix = diagnosis.recommended_fix
+        if fix:
+            print(f"\n   Recommended fix: {fix.summary}")
+            if fix.action:
+                print("   ---")
+                for line in fix.action.splitlines():
+                    print(f"   {line}")
     else:
         print("⚠️  No grounded root cause — escalating to a human.")
     print("=" * 60 + "\n")

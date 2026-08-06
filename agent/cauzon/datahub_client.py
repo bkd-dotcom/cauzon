@@ -2,8 +2,8 @@
 
 Wraps the DataHub MCP tools the agent needs:
   search, get_entities, get_lineage, get_lineage_paths_between,
-  list_schema_fields, get_dataset_queries, and the mutation/document tools
-  (add_tags, update_description, add_owners, save_document).
+  list_schema_fields, get_dataset_queries, search_documents, and the mutation
+  tools (add_tags, update_description, save_document).
 
 Two backends are provided behind one interface:
 
@@ -32,6 +32,8 @@ class DataHubClient(Protocol):
     def get_lineage_paths_between(self, source_urn: str, target_urn: str) -> list[dict[str, Any]]: ...
     def list_schema_fields(self, urn: str) -> list[dict[str, Any]]: ...
     def get_dataset_queries(self, urn: str) -> list[dict[str, Any]]: ...
+    # Read back what earlier investigations wrote, so knowledge compounds.
+    def search_documents(self, query: str) -> list[dict[str, Any]]: ...
     # mutations / write-back
     def add_tags(self, urn: str, tags: list[str]) -> None: ...
     def update_description(self, urn: str, description: str) -> None: ...
@@ -41,22 +43,50 @@ class DataHubClient(Protocol):
 # --------------------------------------------------------------------------- #
 # Mock backend: small graphs with planted, discoverable faults.
 #
-# Two named scenarios are provided (selectable via CAUZON_MOCK_SCENARIO):
+# Three named scenarios are provided (selectable via CAUZON_MOCK_SCENARIO), each
+# planting a fault a *different* signal has to catch:
 #
 #   "freshness" (default) — ingestion stall propagates staleness:
 #       raw_trips -> trips_cleaned -> daily_revenue -> revenue_dashboard
 #       Fault: raw_trips stopped receiving data 2 days ago.
+#       Also carries `marketing_spend`, an ungroundable decoy that outranks the
+#       real culprit on signals and is eliminated by the proof gate.
 #
 #   "schema_change" — an upstream column rename silently breaks a transform:
 #       raw_orders -> orders_enriched -> weekly_sales -> sales_dashboard
 #       Fault: raw_orders renamed `amount` -> `order_amount`; the downstream
 #       transform still selects `amount`, so weekly_sales revenue goes NULL/0.
+#
+#   "fanout" — a dimension table gains duplicate keys and every join multiplies:
+#       raw_events + user_dim -> sessions_joined -> session_metrics
+#       Fault: user_dim's primary key is no longer unique. Nothing is stale and
+#       nothing changed shape, so only a key-uniqueness signal finds it.
 # --------------------------------------------------------------------------- #
 
 _SCENARIO_FRESHNESS = {
+    # A decoy. It looks *worse* than the real culprit on signals alone — stale,
+    # schema-changed, and volume-anomalous, so it ranks first — but no lineage
+    # edge connects it to the symptom. The ranking wants to blame it; the proof
+    # gate refuses. This is the whole thesis, made visible in the demo.
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.marketing_spend,PROD)": {
+        "name": "marketing_spend",
+        "upstreams": [],
+        "owner": "growth-analytics@example.com",
+        "freshness_hours": 62,
+        "expected_freshness_hours": 24,
+        "schema_changed_recently": True,
+        "schema_change_note": "Column `campaign` renamed to `campaign_id` 4 hours ago.",
+        "row_count_delta_pct": -88.0,
+        "queries": [],
+        # Surfaced by the lineage *search* index as a related asset in the same
+        # domain, but absent from every upstreamLineage aspect — so no path can
+        # be reconstructed. Mirrors a real, common DataHub condition.
+        "lineage_index_only": True,
+    },
     "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)": {
         "name": "raw_trips",
         "upstreams": [],
+        "owner": "data-platform@example.com",
         "freshness_hours": 51,  # <-- planted fault: expected < 24h
         "expected_freshness_hours": 24,
         "schema_changed_recently": False,
@@ -68,6 +98,7 @@ _SCENARIO_FRESHNESS = {
     "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)": {
         "name": "trips_cleaned",
         "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)"],
+        "owner": "analytics-eng@example.com",
         "freshness_hours": 50,
         "expected_freshness_hours": 24,
         "schema_changed_recently": False,
@@ -111,6 +142,7 @@ _SCENARIO_SCHEMA_CHANGE = {
     "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)": {
         "name": "raw_orders",
         "upstreams": [],
+        "owner": "commerce-platform@example.com",
         "freshness_hours": 2,  # fresh — this is NOT a freshness problem
         "expected_freshness_hours": 24,
         "schema_changed_recently": True,  # <-- planted fault: column renamed
@@ -129,6 +161,7 @@ _SCENARIO_SCHEMA_CHANGE = {
     "urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)": {
         "name": "orders_enriched",
         "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)"],
+        "owner": "analytics-eng@example.com",
         "freshness_hours": 3,
         "expected_freshness_hours": 24,
         "schema_changed_recently": False,
@@ -145,6 +178,7 @@ _SCENARIO_SCHEMA_CHANGE = {
     "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)": {
         "name": "weekly_sales",
         "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)"],
+        "owner": "revenue-analytics@example.com",
         "freshness_hours": 4,
         "expected_freshness_hours": 24,
         "schema_changed_recently": False,
@@ -166,6 +200,82 @@ _SCENARIO_SCHEMA_CHANGE = {
         "schema_changed_recently": False,
         "row_count_delta_pct": 0.0,
         "queries": [],
+    },
+}
+
+# A fault that neither a freshness nor a schema check would catch: a dimension
+# table silently gained duplicate keys, so every downstream join fans out. The
+# discriminating signal is key uniqueness, not staleness or shape — which is the
+# point: the signal framework is not hardcoded to the first two demos.
+_SCENARIO_FANOUT = {
+    "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)": {
+        "name": "user_dim",
+        "upstreams": [],
+        "owner": "identity-team@example.com",
+        "freshness_hours": 1,  # fresh — not a staleness problem
+        "expected_freshness_hours": 24,
+        "schema_changed_recently": False,  # and not a schema problem
+        "row_count_delta_pct": 4.0,  # below the volume-anomaly threshold
+        "duplicate_key_pct": 3.1,  # <-- planted fault
+        "fanout_note": (
+            "1,240 duplicate `user_id` values (3.1% of rows); the primary key is "
+            "no longer unique after last night's reload."
+        ),
+        "schema_fields": [
+            {"name": "user_id", "type": "STRING"},
+            {"name": "signup_date", "type": "DATE"},
+            {"name": "plan", "type": "STRING"},
+        ],
+        "queries": [
+            {"query": "INSERT INTO user_dim SELECT * FROM stg_users", "last_run": "6 hours ago"}
+        ],
+    },
+    "urn:li:dataset:(urn:li:dataPlatform:s3,app.raw_events,PROD)": {
+        "name": "raw_events",
+        "upstreams": [],
+        "owner": "data-platform@example.com",
+        "freshness_hours": 1,
+        "expected_freshness_hours": 24,
+        "schema_changed_recently": False,
+        "row_count_delta_pct": 2.0,
+        "queries": [],
+    },
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)": {
+        "name": "sessions_joined",
+        "upstreams": [
+            "urn:li:dataset:(urn:li:dataPlatform:s3,app.raw_events,PROD)",
+            "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+        ],
+        "owner": "analytics-eng@example.com",
+        "freshness_hours": 2,
+        "expected_freshness_hours": 24,
+        "schema_changed_recently": False,
+        "row_count_delta_pct": 212.0,  # inherited: the join fanned out
+        "queries": [
+            {
+                "query": "CREATE OR REPLACE TABLE sessions_joined AS "
+                "SELECT e.session_id, e.duration_s, u.plan "
+                "FROM raw_events e JOIN user_dim u ON e.user_id = u.user_id",
+                "last_run": "2 hours ago",
+            }
+        ],
+    },
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)": {
+        "name": "session_metrics",
+        "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)"],
+        "owner": "product-analytics@example.com",
+        "freshness_hours": 2,
+        "expected_freshness_hours": 24,
+        "schema_changed_recently": False,
+        "row_count_delta_pct": 212.0,  # the visible symptom
+        "queries": [
+            {
+                "query": "CREATE OR REPLACE TABLE session_metrics AS "
+                "SELECT plan, COUNT(*) AS sessions, AVG(duration_s) AS avg_duration "
+                "FROM sessions_joined GROUP BY plan",
+                "last_run": "1 hour ago",
+            }
+        ],
     },
 }
 
@@ -198,6 +308,40 @@ _SCENARIOS: dict[str, tuple[dict, str, dict]] = {
             "detected_at": "today 09:12",
         },
     ),
+    "fanout": (
+        _SCENARIO_FANOUT,
+        "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)",
+        {
+            "title": "session_metrics session counts tripled overnight",
+            "description": (
+                "Session counts are up 212% with no marketing change, and average "
+                "session duration halved. Both look like a join fanout rather than "
+                "real traffic."
+            ),
+            "failed_assertion": "session_metrics.sessions within 25% of 7-day average",
+            "detected_at": "today 07:41",
+        },
+    ),
+}
+
+# Dossiers a previous Cauzon run already wrote to the catalog. The freshness
+# scenario is a repeat offender, so the demo shows recurrence detection changing
+# the recommendation from "backfill this occurrence" to "fix the schedule".
+_PRIOR_DOSSIERS: dict[str, list[dict[str, Any]]] = {
+    "freshness": [
+        {
+            "urn": "urn:li:document:(cauzon,rca-raw_trips-ingestion-stalled-2026-07-22)",
+            "title": "[Cauzon] RCA: raw_trips ingestion stalled (daily_revenue volume drop)",
+            "detected_at": "2026-07-22 06:11",
+            "related": ["urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)"],
+        },
+        {
+            "urn": "urn:li:document:(cauzon,rca-raw_trips-ingestion-stalled-2026-08-01)",
+            "title": "[Cauzon] RCA: raw_trips ingestion stalled (daily_revenue volume drop)",
+            "detected_at": "2026-08-01 05:48",
+            "related": ["urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)"],
+        },
+    ],
 }
 
 # Backwards-compatible aliases (freshness scenario is the default).
@@ -222,6 +366,12 @@ class MockDataHubClient:
         self._incident = incident
         self._graph = {k: dict(v) for k, v in graph.items()}
         self._writes: list[dict[str, Any]] = []  # captured write-backs for the UI
+        # Dossiers already in the catalog. Cauzon writes these with save_document
+        # and reads them back with search_documents, so a repeat failure is
+        # recognised as a pattern instead of investigated from scratch.
+        self._documents: list[dict[str, Any]] = [
+            dict(d) for d in _PRIOR_DOSSIERS.get(scenario, [])
+        ]
 
     # ---- reads ----------------------------------------------------------- #
     def list_open_incidents(self) -> list[dict[str, Any]]:
@@ -262,6 +412,17 @@ class MockDataHubClient:
                 seen.add(up)
                 results.append({"urn": up, "hops": dist + 1, "name": self._graph[up]["name"]})
                 frontier.append((up, dist + 1))
+
+        # Assets the lineage *search* index reports as related to the incident,
+        # but which no upstreamLineage aspect actually connects. They enter the
+        # candidate pool and are eliminated by the proof gate, not by scoring.
+        # Only surfaced for the symptom itself — a one-hop parent lookup must
+        # never see them, or an unrelated asset would look like a real upstream.
+        if direction == "upstream" and urn == self._symptom_urn:
+            for u, node in self._graph.items():
+                if node.get("lineage_index_only") and u not in seen:
+                    seen.add(u)
+                    results.append({"urn": u, "hops": 2, "name": node["name"]})
         return results
 
     def get_lineage_paths_between(self, source_urn: str, target_urn: str) -> list[dict[str, Any]]:
@@ -304,6 +465,23 @@ class MockDataHubClient:
     def get_dataset_queries(self, urn: str) -> list[dict[str, Any]]:
         return self._graph.get(urn, {}).get("queries", [])
 
+    def search_documents(self, query: str) -> list[dict[str, Any]]:
+        """Find prior dossiers for an asset named in the query.
+
+        Matches on the meaningful tokens only — every Cauzon dossier title starts
+        with the same prefix, so matching on that would return all of them.
+        """
+        stop = {"[cauzon]", "cauzon", "rca", "rca:", "incident", "for", "on"}
+        tokens = [t for t in query.lower().split() if t not in stop and len(t) > 3]
+        if not tokens:
+            return []
+        hits = []
+        for doc in self._documents:
+            haystack = (doc.get("title", "") + " " + " ".join(doc.get("related", []))).lower()
+            if any(t in haystack for t in tokens):
+                hits.append(doc)
+        return hits
+
     # ---- write-backs ----------------------------------------------------- #
     def add_tags(self, urn: str, tags: list[str]) -> None:
         self._writes.append({"op": "add_tags", "urn": urn, "tags": tags})
@@ -315,6 +493,10 @@ class MockDataHubClient:
         doc_urn = f"urn:li:document:(cauzon,{title.replace(' ', '-').lower()})"
         self._writes.append(
             {"op": "save_document", "urn": doc_urn, "title": title, "related": related_urns}
+        )
+        # Also lands in the catalog, so a later investigation reads it back.
+        self._documents.append(
+            {"urn": doc_urn, "title": title, "related": related_urns, "detected_at": None}
         )
         return doc_urn
 
@@ -346,6 +528,35 @@ def _first(d: Any, *keys: str, default: Any = None) -> Any:
         if k in d and d[k] is not None:
             return d[k]
     return default
+
+
+def _owner_of(raw: Any) -> Optional[str]:
+    """Pull a human-readable owner out of DataHub's ownership aspect.
+
+    The aspect shape varies across GraphQL and REST responses, so this reads
+    defensively and returns None rather than guessing.
+    """
+    ownership = _first(raw, "ownership", default={}) or {}
+    owners = ownership.get("owners") if isinstance(ownership, dict) else None
+    if not isinstance(owners, list):
+        return None
+    for entry in owners:
+        if not isinstance(entry, dict):
+            continue
+        owner = entry.get("owner")
+        if isinstance(owner, dict):
+            props = owner.get("properties") or owner.get("editableProperties") or {}
+            label = (
+                (props.get("email") if isinstance(props, dict) else None)
+                or (props.get("displayName") if isinstance(props, dict) else None)
+                or owner.get("username")
+                or owner.get("urn")
+            )
+        else:
+            label = owner if isinstance(owner, str) else None
+        if label:
+            return str(label).split(":")[-1]
+    return None
 
 
 def _short_name(urn: str) -> str:
@@ -456,11 +667,14 @@ class MCPDataHubClient:
             "urn": urn,
             "name": _first(raw, "name") or _short_name(urn),
             "upstreams": [],  # lineage is fetched separately via get_lineage
+            "owner": _owner_of(raw),
             "freshness_hours": _num("freshness_hours"),
             "expected_freshness_hours": _num("expected_freshness_hours"),
             "schema_changed_recently": schema_changed,
             "schema_change_note": cprops.get("schema_change_note"),
             "row_count_delta_pct": _num("row_count_delta_pct"),
+            "duplicate_key_pct": _num("duplicate_key_pct"),
+            "fanout_note": cprops.get("fanout_note"),
             "queries": [],
             "_raw": raw,  # kept for debugging / richer heuristics
         }
@@ -617,6 +831,36 @@ class MCPDataHubClient:
             stmt = _first(props, "statement", default={})
             text = _first(stmt, "value") if isinstance(stmt, dict) else stmt
             out.append({"query": text or "", "last_run": _first(props, "lastModified", "created")})
+        return out
+
+    def search_documents(self, query: str) -> list[dict[str, Any]]:
+        """Find prior Cauzon dossiers in the catalog.
+
+        DataHub hides the document tools when a catalog holds no documents, so a
+        missing tool means "nothing written yet" — an empty result, not an error.
+        """
+        tool = getattr(self._mt, "search_documents", None)
+        if not callable(tool):
+            return []
+        try:
+            res = tool(query=query, num_results=10)
+        except Exception:
+            return []
+        entities = _first(res, "searchResults", "entities", "results", default=[]) or []
+        out = []
+        for ent in entities:
+            e = ent.get("entity", ent) if isinstance(ent, dict) else {}
+            urn = _first(e, "urn")
+            if not urn:
+                continue
+            props = _first(e, "properties", "documentProperties", default={}) or {}
+            out.append(
+                {
+                    "urn": urn,
+                    "title": _first(props, "title", "name", default="") or _short_name(urn),
+                    "detected_at": _first(props, "created", "lastModified"),
+                }
+            )
         return out
 
     # ---- write-backs ----------------------------------------------------- #
