@@ -333,7 +333,7 @@ function Footer() {
     <footer className="rule mt-12 flex flex-wrap items-center justify-between gap-4 pt-5">
       <span className="label">Apache-2.0 · built on the DataHub MCP server</span>
       <a
-        href="https://github.com/binaydalai/cauzon"
+        href="https://github.com/bkd-dotcom/cauzon"
         className="text-xs text-bone-dim no-underline hover:text-jade"
       >
         Source

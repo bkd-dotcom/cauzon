@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import HeroSpine from "@/components/HeroSpine";
 
-const REPO = "https://github.com/binaydalai/cauzon";
+const REPO = "https://github.com/bkd-dotcom/cauzon";
 
 /** The investigation loop. Numbered because it genuinely is a sequence. */
 const PHASES = [
@@ -236,7 +236,7 @@ export default function LandingPage() {
       <footer className="rule flex flex-wrap items-center justify-between gap-4 py-6">
         <span className="label">Apache-2.0 · built on the DataHub MCP server</span>
         <a href={REPO} className="text-xs text-bone-dim no-underline hover:text-jade">
-          github.com/binaydalai/cauzon
+          github.com/bkd-dotcom/cauzon
         </a>
       </footer>
     </div>

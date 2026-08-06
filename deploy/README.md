@@ -42,7 +42,7 @@ gcloud run deploy cauzon-api \
   --cpu 1 \
   --timeout 300 \
   --min-instances 1 \
-  --set-env-vars "CAUZON_CORS_ORIGINS=https://YOUR_USER.github.io"
+  --set-env-vars "CAUZON_CORS_ORIGINS=https://bkd-dotcom.github.io"
 ```
 
 Then point the frontend at it and redeploy Pages:
@@ -54,10 +54,12 @@ NEXT_PUBLIC_CAUZON_API=https://cauzon-api-XXXX.us-central1.run.app
 
 Four flags worth understanding rather than copying:
 
-- **`--min-instances 1`** keeps one instance warm. Without it a judge's first
-  click waits on a cold start, and the frontend's 1.5s health-probe timeout will
-  have already fallen back to replay — so the live backend would exist and never
-  be seen. This is the flag that matters most.
+- **`--min-instances 1`** keeps one instance warm, eliminating the cold start —
+  but it is also what takes you off the free tier, since an idle instance burns
+  vCPU-seconds continuously. Omit it to stay free: the frontend shows the recorded
+  replay immediately and upgrades itself to live once the instance wakes (see
+  *Running it entirely free* below). Include it only if you would rather pay a few
+  dollars than have the first click land on a recording.
 - **`--timeout 300`** is the request ceiling, and a WebSocket counts as one
   request. Investigations take about a second; 300s is slack, not a target.
 - **`--allow-unauthenticated`** is required for a public demo. The write-back gate
@@ -104,7 +106,7 @@ datahub docker quickstart              # ~5–10 min on first run
 Then plant the demo lineage graph and mint a token:
 
 ```bash
-git clone https://github.com/binaydalai/cauzon && cd cauzon
+git clone https://github.com/bkd-dotcom/cauzon && cd cauzon
 pip3 install --break-system-packages -e ".[datahub]"
 python3 scripts/ingest_demo_lineage.py
 ```
@@ -200,7 +202,7 @@ sudo usermod -aG docker $USER && newgrp docker
 pip3 install --break-system-packages acryl-datahub
 datahub docker quickstart
 
-git clone https://github.com/binaydalai/cauzon && cd cauzon
+git clone https://github.com/bkd-dotcom/cauzon && cd cauzon
 python3 scripts/ingest_demo_lineage.py
 docker build -t cauzon-api .
 docker run -d --restart unless-stopped --network host \
@@ -209,7 +211,7 @@ docker run -d --restart unless-stopped --network host \
   -e DATAHUB_GMS_URL=http://localhost:8080 \
   -e DATAHUB_TOKEN=... \
   -e CAUZON_DATAHUB_UI_URL=https://YOUR_HOST \
-  -e CAUZON_CORS_ORIGINS=https://YOUR_USER.github.io \
+  -e CAUZON_CORS_ORIGINS=https://bkd-dotcom.github.io \
   cauzon-api
 ```
 
@@ -246,7 +248,7 @@ usable at 0.2s, live at 6s.
 ```bash
 gcloud run deploy cauzon-api --source . --region us-central1 \
   --allow-unauthenticated --memory 512Mi --timeout 300 \
-  --set-env-vars "CAUZON_CORS_ORIGINS=https://YOUR_USER.github.io"
+  --set-env-vars "CAUZON_CORS_ORIGINS=https://bkd-dotcom.github.io"
 ```
 
 Other always-on free hosts that fit a container this size: **Hugging Face Spaces**
