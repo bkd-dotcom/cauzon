@@ -164,6 +164,118 @@ seeing the `root-cause` tag Cauzon applied. Worth the setup on its own.
 
 ---
 
+## Running it entirely free
+
+Both stages can be free. The catch is that DataHub wants ~8 GB RAM, and almost no
+free tier offers that — with one exception.
+
+### The whole thing on one free VM (Oracle Cloud Always Free)
+
+Oracle's Always Free tier includes an **Ampere A1 (ARM)** allowance of 1,500 OCPU
+hours + 9,000 GB hours per month — a steady-state **2 OCPU / 12 GB** instance that
+never expires. DataHub's quickstart asks for 2 CPU / 8 GB, so it fits with roughly
+4 GB spare, which is enough for the Cauzon API alongside it (~300 MB).
+
+**ARM works — this was verified, not assumed.** Every image in the quickstart
+stack publishes `linux/arm64`:
+
+```
+acryldata/datahub-gms              amd64, arm64
+acryldata/datahub-frontend-react   amd64, arm64
+acryldata/datahub-actions          amd64, arm64
+acryldata/datahub-upgrade          amd64, arm64
+confluentinc/cp-kafka:8.2.2        amd64, arm64
+mysql:8.2                          amd64, arm64
+opensearchproject/opensearch       amd64, arm64
+```
+
+Running both on one box is also *simpler* than splitting them: the API reaches GMS
+at `http://localhost:8080`, so there is no VPC connector, no firewall rule, and
+GMS is never exposed to the internet.
+
+```bash
+# On the instance (Ubuntu 24.04 ARM):
+sudo apt-get update && sudo apt-get install -y python3-pip docker.io docker-compose-v2
+sudo usermod -aG docker $USER && newgrp docker
+pip3 install --break-system-packages acryl-datahub
+datahub docker quickstart
+
+git clone https://github.com/binaydalai/cauzon && cd cauzon
+python3 scripts/ingest_demo_lineage.py
+docker build -t cauzon-api .
+docker run -d --restart unless-stopped --network host \
+  -e PORT=8000 \
+  -e CAUZON_DATAHUB_BACKEND=mcp \
+  -e DATAHUB_GMS_URL=http://localhost:8080 \
+  -e DATAHUB_TOKEN=... \
+  -e CAUZON_DATAHUB_UI_URL=https://YOUR_HOST \
+  -e CAUZON_CORS_ORIGINS=https://YOUR_USER.github.io \
+  cauzon-api
+```
+
+**You need HTTPS**, because a page served over HTTPS from GitHub Pages cannot call
+an `http://` API — the browser blocks it as mixed content. Free options: Caddy with
+a wildcard-DNS hostname (`caddy reverse-proxy --from <ip>.nip.io --to :8000`
+gets a real Let's Encrypt certificate with no domain purchase), a free DuckDNS
+subdomain, or a named Cloudflare Tunnel if you already own a domain.
+
+Three risks worth knowing before you commit an afternoon to this:
+
+- **`out of host capacity`** is the common failure. A1 capacity in popular home
+  regions is frequently exhausted; you may need to retry across availability
+  domains or over a few hours. This is the main reason it might not work today.
+- **ARM is a less-travelled path.** Everything checks out, but if something does
+  break you will find fewer people who have hit it.
+- **Oracle reclaims idle instances** (7-day p95 under 20% CPU *and* network *and*
+  memory). DataHub's own footprint keeps memory well above that, so running
+  DataHub effectively protects the instance — but do not park an empty VM there
+  and expect it to survive.
+
+### Free backend only, on Cloud Run
+
+If you skip DataHub and stay on the demo catalog, Cloud Run's free tier (2M
+requests, 180k vCPU-seconds/month) covers this comfortably — as long as you
+**drop `--min-instances 1`**, which is what would otherwise push you off free.
+
+That means scale-to-zero and a cold start on the first click. The frontend now
+handles that: it shows the recorded replay immediately, then keeps probing with
+spacing and **upgrades itself to live once the instance wakes**, with no reload.
+Verified against a backend that refuses connections for its first three seconds —
+usable at 0.2s, live at 6s.
+
+```bash
+gcloud run deploy cauzon-api --source . --region us-central1 \
+  --allow-unauthenticated --memory 512Mi --timeout 300 \
+  --set-env-vars "CAUZON_CORS_ORIGINS=https://YOUR_USER.github.io"
+```
+
+Other always-on free hosts that fit a container this size: **Hugging Face Spaces**
+(Docker SDK, sleeps only after ~48 h idle) and **Koyeb** (one free service).
+Avoid Render's free tier — it sleeps after 15 minutes and cold-starts in ~50 s,
+which is slow enough that a reviewer gives up before the upgrade lands.
+
+### Zero-ops alternative: a DataHub Cloud trial
+
+DataHub offers a hosted free trial (`datahub.com/free-trial/`). For a judging
+window measured in days, a trial instance is the least work of all — no VM, no
+ARM, no TLS, no capacity lottery, and DataHub keeps it running. Worth checking
+whether the trial permits API tokens and mutations before relying on it, since
+write-back needs `TOOLS_IS_MUTATION_ENABLED=true`.
+
+Note that DataHub's public demo (`demo.datahub.com`) is **not** an option:
+`/api/graphql` returns `401`, so there is no anonymous API access to point at.
+
+### What I would actually do with four days left
+
+Deploy the free Cloud Run backend on the demo catalog and let the header say
+`Live agent · demo catalog` — that is honest, free, and cannot break. Then prove
+the DataHub half with evidence rather than uptime: run the live write-back locally
+once, film the DataHub UI showing the `root-cause` tag, and keep
+`examples/live-proof/` as the paper trail. A VM that dies unattended at 3 a.m.
+mid-judging is worse than never having claimed it.
+
+---
+
 ## Environment reference
 
 | Variable | Default | Purpose |
