@@ -23,7 +23,7 @@
 import { useMemo } from "react";
 
 import { peakScore, type SpineModel } from "@/lib/spine";
-import { SIGNAL_LABELS, platformOf, type SpineNode } from "@/lib/types";
+import { SIGNAL_LABELS, ellipsise, platformOf, type SpineNode } from "@/lib/types";
 
 const VIEW_W = 980;
 const PLATE_W = 172;
@@ -405,6 +405,13 @@ function Plate({
   // Long asset names would otherwise run under the score, so the name gets the
   // full plate width and the score sits on the row above it.
   const nameSize = node.name.length > 17 ? 12 : 13.5;
+  // Live-catalog names are long enough to run off the plate entirely
+  // (`2023_yellow_taxi_trip_data` overshoots by about 30px), which also drags the
+  // group's focus outline out over its neighbours. Truncate from the middle: both
+  // ends of a dataset name carry meaning, so `2023_yellow…rip_data` identifies it
+  // where a trailing ellipsis would not. The full name is in the title and in the
+  // detail panel a click away.
+  const label = ellipsise(node.name, nameSize === 12 ? 20 : 18);
 
   return (
     /* Outer group positions. Inner group animates. Keeping these separate is
@@ -412,7 +419,7 @@ function Plate({
        attribute, which would collapse every plate onto the origin. */
     <g transform={`translate(${x}, ${y})`}>
       <g
-        className="anim-plate-land"
+        className="plate-hit anim-plate-land"
         style={{
           animationDelay: `${revealDelay}ms`,
           cursor: interactive ? "pointer" : "default",
@@ -430,7 +437,11 @@ function Plate({
           }
         }}
       >
-        {node.role === "symptom" && (
+        {/* The pulse draws the eye to the asset that alerted. Once the plate is
+            selected that job is done, and keeping it would stack a second ring
+            outside the selection border for no added meaning — the amber name
+            still says which node is the symptom. */}
+        {node.role === "symptom" && !selected && (
           <rect
             className="anim-pulse-symptom"
             x="-4"
@@ -450,6 +461,20 @@ function Plate({
           fill="var(--color-ink-raised)"
           stroke={selected ? "var(--color-bone-dim)" : tone.border}
           strokeWidth={selected ? 1.5 : 1}
+        />
+
+        {/* Keyboard focus, shown via CSS on :focus-visible so a mouse click gets
+            the selected border alone rather than both indicators at once. */}
+        <rect
+          className="focus-ring"
+          x="-3"
+          y="-3"
+          width={PLATE_W + 6}
+          height={PLATE_H + 6}
+          rx="4"
+          fill="none"
+          stroke="var(--color-jade)"
+          strokeWidth="2"
         />
 
         {platform && (
@@ -477,14 +502,15 @@ function Plate({
         )}
 
         <text x="12" y="36" fill={tone.text} fontSize={nameSize} fontWeight="600">
-          {node.name}
+          <title>{node.name}</title>
+          {label}
         </text>
         {rejected && (
           /* Drawn rather than text-decoration, which overshoots in SVG. */
           <line
             x1="12"
             y1="32"
-            x2={12 + node.name.length * nameSize * 0.58}
+            x2={12 + label.length * nameSize * 0.58}
             y2="32"
             stroke="var(--color-oxide)"
             strokeWidth="1.25"

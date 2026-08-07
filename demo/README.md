@@ -62,9 +62,10 @@ is upstream" is a direction you can point at rather than an argument.
 **Zone map** (~10s, needs the live catalog selected, trade against shot 10).
 
 > "This is the live half — real assets, real freshness, from NYC Open Data. The
-> stale one is the zone lookup table, and these are the 263 zones it defines.
-> Every trip record downstream resolves its pickup through one of these. Stale
-> geography, not just a stale row count."
+> stale one is the zone lookup table, and these are the 263 zones it defines,
+> shaded by 38 million real pickups. JFK alone routes two million trips through
+> one definition that's four and a half times past its SLA. Stale geography, not
+> just a stale row count."
 
 Strongest if the audience is skeptical that anything here is real: the geometry
 is fetched from the same dataset the incident is about.

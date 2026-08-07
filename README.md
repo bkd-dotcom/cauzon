@@ -173,11 +173,26 @@ chain you have to trace, and one upstream cause feeding three separate incidents
 is visible as a shape. Nodes within a column are ordered by their parents'
 barycentre, so edges don't cross for reasons that are purely alphabetical.
 
-**Zone map.** The 263 real taxi zones the stale lookup table defines, drawn from
-the same dataset the live backend reports on. This is the one view that is not
-about lineage, and it earns its place by giving the abstraction a footprint: every
-trip record downstream resolves its pickup and dropoff through one of these
-polygons, so a stale zone table is stale *geography*, not just a stale row count.
+**Zone map.** The 263 real taxi zones the stale lookup table defines, shaded by
+the real traffic that depends on them. This is the one view that is not about
+lineage, and it earns its place by turning the blast radius into something you can
+point at: every trip record downstream resolves its pickup and dropoff through one
+of these polygons, so a stale zone table is stale *geography*, not just a stale row
+count.
+
+The shading is 38,310,226 real pickups, aggregated **by Socrata** — a `$group` on
+`pulocationid` returns 263 rows for 38 million records, so the browser never
+receives the trip data and the server never holds it. JFK alone routes 1,992,304
+pickups through one zone definition that is 4.6× past its freshness SLA. The scale
+is logarithmic and says so, because the range runs from one pickup to two million
+and a linear ramp would show only the airports.
+
+Two honest notes the UI also makes: the trip dataset is historical, so those
+totals are stable rather than moving minute to minute — what moves is the lookup
+table's freshness. And if the aggregation fails the map falls back to borough
+shading and says why, because an unshaded choropleth reads as *no trips here* when
+it means *we could not ask*.
+
 Geometry is a generated artifact like the fixtures — real, reduced, never
 hand-edited (`scripts/build_zone_geometry.py`, Douglas-Peucker, 98,192 points to
 7,286).
@@ -307,7 +322,7 @@ templates, so tests are hermetic and a demo cannot fail on a network call.
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 118 tests
+pytest -q          # 125 tests
 ```
 
 The suite is deliberately adversarial about the central claim: a hostile narrator
@@ -342,6 +357,7 @@ cauzon/
 │   ├── reasoner.py            # optional Claude narration, structurally unable to decide
 │   ├── models.py              # grounding ladder, confidence factors, proof path
 │   ├── overview.py            # triage inbox + catalog map (metadata reads only)
+│   ├── zone_volume.py         # real pickups per zone, aggregated by Socrata
 │   └── cli.py
 ├── backend/main.py            # FastAPI + WebSocket live trace
 ├── frontend/                  # Next.js app — landing page + the investigation UI

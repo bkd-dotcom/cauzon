@@ -43,8 +43,11 @@ annual archive two months late is not — with the downstream count and the owne
 and a link straight into the investigation. A **catalog map** draws every asset by
 depth, so upstream is a direction you can point at and one cause feeding three
 incidents is visible as a shape. And for the live catalog, a **zone map** of the
-263 real taxi zones the stale lookup table defines, because a stale zone table is
-stale geography, not just a stale row count.
+263 real taxi zones the stale lookup table defines, shaded by 38,310,226 real
+pickups aggregated by Socrata — JFK alone routes 1,992,304 of them through a zone
+definition 4.6x past its freshness SLA. A stale lookup table is stale geography,
+not just a stale row count, and the map is what makes that a number rather than a
+turn of phrase.
 
 ## How it works
 

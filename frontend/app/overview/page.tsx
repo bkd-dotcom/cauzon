@@ -220,6 +220,7 @@ export default function OverviewPage() {
               stale={Boolean(
                 inbox?.some((e) => e.name.toLowerCase().includes("taxi zones")),
               )}
+              apiBase={apiBaseFor("live")}
             />
           </Panel>
         )}

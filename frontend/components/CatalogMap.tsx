@@ -17,7 +17,7 @@
 import { useMemo } from "react";
 
 import type { CatalogMap as CatalogMapData, CatalogNode } from "@/lib/types";
-import { SIGNAL_LABELS, humaniseHours } from "@/lib/types";
+import { SIGNAL_LABELS, ellipsise, humaniseHours } from "@/lib/types";
 
 const PLATE_W = 150;
 const PLATE_H = 40;
@@ -193,6 +193,7 @@ export default function CatalogMap({
           return (
             <g key={node.urn} transform={`translate(${x}, ${y})`}>
               <g
+                className="plate-hit"
                 role={interactive ? "button" : undefined}
                 tabIndex={interactive ? 0 : undefined}
                 aria-label={`${node.name}, ${tone.label}`}
@@ -205,7 +206,10 @@ export default function CatalogMap({
                   }
                 }}
               >
-                {node.health === "incident" && (
+                {/* Suppressed while selected: the selection border already
+                    emphasises the plate, and a second ring outside it reads as a
+                    doubled border rather than a pulse. */}
+                {node.health === "incident" && !selected && (
                   <rect
                     className="anim-pulse-symptom"
                     x="-3"
@@ -225,8 +229,20 @@ export default function CatalogMap({
                   stroke={selected ? "var(--color-bone-dim)" : tone.stroke}
                   strokeWidth={selected ? 1.5 : 1}
                 />
+                <rect
+                  className="focus-ring"
+                  x="-3"
+                  y="-3"
+                  width={PLATE_W + 6}
+                  height={PLATE_H + 6}
+                  rx="4"
+                  fill="none"
+                  stroke="var(--color-jade)"
+                  strokeWidth="2"
+                />
                 <text x="10" y="17" fill={tone.text} fontSize="11.5" fontWeight="600">
-                  {node.name.length > 19 ? `${node.name.slice(0, 18)}…` : node.name}
+                  <title>{node.name}</title>
+                  {ellipsise(node.name, 19)}
                 </text>
                 <text x="10" y="30" fill="var(--color-muted)" fontSize="8.5">
                   {[node.platform?.toUpperCase(), humaniseHours(node.freshness_hours)]

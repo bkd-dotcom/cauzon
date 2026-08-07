@@ -256,6 +256,23 @@ export function shortName(urn: string): string {
 }
 
 /** Platform slug from a DataHub URN, e.g. "snowflake". */
+/**
+ * Shorten a name to fit a fixed-width plate, cutting from the middle.
+ *
+ * Dataset names carry meaning at both ends — `2023_yellow_taxi_trip_data` is
+ * identified by its year and by what it holds — so a trailing ellipsis throws
+ * away half of what distinguishes it from its siblings.
+ */
+export function ellipsise(name: string, max: number): string {
+  if (name.length <= max) return name;
+  // Two characters of the budget go to the ellipsis and the join, so the head
+  // gets the larger half when the remainder is odd.
+  const keep = max - 1;
+  const head = Math.ceil(keep / 2);
+  const tail = keep - head;
+  return `${name.slice(0, head)}…${tail > 0 ? name.slice(-tail) : ""}`;
+}
+
 export function platformOf(urn: string): string | null {
   const m = urn.match(/dataPlatform:([^,)]+)/);
   return m ? m[1] : null;
@@ -310,6 +327,20 @@ export interface CatalogMap {
     overdue: number;
     healthy: number;
   };
+}
+
+/** Real pickup volume per zone id, aggregated by Socrata at request time. */
+export interface ZoneVolume {
+  /** Zone id (the lookup table's own `locationid`) to pickup count. */
+  trips: Record<string, number>;
+  total_trips: number;
+  zones_covered: number;
+  dataset_id: string;
+  dataset_label: string;
+  source_url: string;
+  /** True when the fetch failed and this is a reused or empty snapshot. */
+  stale: boolean;
+  error?: string;
 }
 
 /** Real NYC taxi-zone geometry, simplified for the browser. */

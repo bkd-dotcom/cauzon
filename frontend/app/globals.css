@@ -81,6 +81,28 @@
     border-radius: 2px;
   }
 
+  /* An SVG group takes its focus outline from the group's bounding box, which is
+     larger than the plate the group draws — a symptom's pulse ring extends past
+     it, and so does a long asset name. The result was a rectangle sitting outside
+     the plate and overlapping its neighbours. These groups opt out and light a
+     ring of their own, drawn at a known offset from the plate itself.
+
+     Suppressed on :focus rather than :focus-visible because a click on a
+     tabindex'd <g> paints the browser's own outline — bright blue, off-palette,
+     and on top of the selected border. The explicit ring below still covers
+     keyboard focus, so nothing is lost by turning the built-in one off. */
+  .plate-hit:focus {
+    outline: none;
+  }
+
+  .plate-hit .focus-ring {
+    opacity: 0;
+  }
+
+  .plate-hit:focus-visible .focus-ring {
+    opacity: 1;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     html {
       scroll-behavior: auto;

@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -34,6 +34,7 @@ from cauzon.datahub_client import (  # noqa: E402
 from cauzon.live_client import LiveDataHubClient  # noqa: E402
 from cauzon.models import Incident, TraceEvent  # noqa: E402
 from cauzon.overview import CatalogMap, build_catalog_map, build_inbox  # noqa: E402
+from cauzon.zone_volume import ZONE_DATASET_ID, ZoneVolume  # noqa: E402
 
 app = FastAPI(title="Cauzon API", version="0.1.0")
 
@@ -181,8 +182,16 @@ def _catalog_clients() -> list[Any]:
 def inbox() -> list[dict[str, Any]]:
     """Open incidents enriched for triage, worst-overdue first."""
     entries = [e for client in _catalog_clients() for e in build_inbox(client)]
+    # Same key build_inbox uses. Re-sorting on the ratio alone would bury a
+    # failing assertion on a fresh asset, which is a live problem even though
+    # nothing is late — and would contradict the ordering the builder is tested on.
     entries.sort(
-        key=lambda e: (e.overdue_ratio or 0.0, e.downstream_count), reverse=True
+        key=lambda e: (
+            2 if e.severity == "critical" else 1,
+            e.downstream_count,
+            e.overdue_ratio or 0.0,
+        ),
+        reverse=True,
     )
     return [entry.to_dict() for entry in entries]
 
@@ -198,6 +207,37 @@ def catalog() -> dict[str, Any]:
         edges.extend(part.edges)
     nodes.sort(key=lambda n: (n.depth, n.name))
     return CatalogMap(nodes=nodes, edges=edges).to_dict()
+
+
+# One instance per process so the hour-long cache is actually shared across
+# requests. The aggregation takes a few seconds; doing it per request would make
+# the map feel broken.
+_zone_volume = ZoneVolume()
+
+
+@app.get("/api/zones")
+def zones() -> dict[str, Any]:
+    """Real pickup volume per taxi zone, aggregated by Socrata.
+
+    Only the live backend can answer this: the numbers come from the same city
+    dataset the live catalog reports on. The mock backend says so rather than
+    inventing traffic, because a fabricated choropleth would undercut the one
+    thing the map is for.
+    """
+    if not _using_live():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Zone volume is only available on the live catalog backend, "
+                "which reads it from NYC Open Data."
+            ),
+        )
+    snapshot = _zone_volume.snapshot()
+    return {
+        **snapshot,
+        "zone_dataset_id": ZONE_DATASET_ID,
+        "zone_source_url": f"https://data.cityofnewyork.us/d/{ZONE_DATASET_ID}",
+    }
 
 
 @app.post("/api/investigate")
