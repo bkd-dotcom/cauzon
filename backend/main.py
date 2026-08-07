@@ -26,12 +26,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
 
 from cauzon.agent import CauzonAgent  # noqa: E402
 from cauzon.datahub_client import (  # noqa: E402
+    MOCK_SCENARIOS,
     MockDataHubClient,
     all_mock_incidents,
     scenario_for_symptom,
 )
 from cauzon.live_client import LiveDataHubClient  # noqa: E402
 from cauzon.models import Incident, TraceEvent  # noqa: E402
+from cauzon.overview import CatalogMap, build_catalog_map, build_inbox  # noqa: E402
 
 app = FastAPI(title="Cauzon API", version="0.1.0")
 
@@ -158,6 +160,44 @@ def list_incidents() -> list[dict[str, Any]]:
         # However many are genuinely past their SLA right now — not a fixed set.
         return _live().list_open_incidents()
     return _agent().client.list_open_incidents()
+
+
+def _catalog_clients() -> list[Any]:
+    """Clients covering everything the incident queue exposes.
+
+    A mock client is pinned to one scenario, but the queue serves all three, so
+    the map and the inbox have to span all three too — otherwise the overview
+    contradicts the list it sits above. The scenario graphs are disjoint, so the
+    map simply shows three clusters.
+    """
+    if _using_live():
+        return [_live()]
+    if _using_mock():
+        return [MockDataHubClient(scenario=name) for name in MOCK_SCENARIOS]
+    return [_agent().client]
+
+
+@app.get("/api/inbox")
+def inbox() -> list[dict[str, Any]]:
+    """Open incidents enriched for triage, worst-overdue first."""
+    entries = [e for client in _catalog_clients() for e in build_inbox(client)]
+    entries.sort(
+        key=lambda e: (e.overdue_ratio or 0.0, e.downstream_count), reverse=True
+    )
+    return [entry.to_dict() for entry in entries]
+
+
+@app.get("/api/catalog")
+def catalog() -> dict[str, Any]:
+    """Every asset and edge, with health marked — the catalog map."""
+    nodes: list[Any] = []
+    edges: list[dict[str, str]] = []
+    for client in _catalog_clients():
+        part = build_catalog_map(client)
+        nodes.extend(part.nodes)
+        edges.extend(part.edges)
+    nodes.sort(key=lambda n: (n.depth, n.name))
+    return CatalogMap(nodes=nodes, edges=edges).to_dict()
 
 
 @app.post("/api/investigate")

@@ -260,3 +260,78 @@ export function platformOf(urn: string): string | null {
   const m = urn.match(/dataPlatform:([^,)]+)/);
   return m ? m[1] : null;
 }
+
+/** One row of the triage inbox — enriched enough to sort without investigating. */
+export interface InboxEntry {
+  urn: string;
+  name: string;
+  title: string;
+  /**
+   * critical — at least twice its own freshness SLA
+   * overdue  — past its SLA but not yet double
+   * failing  — an assertion is failing while freshness is fine, so this is not
+   *            a staleness problem and must not be labelled as one
+   */
+  severity: "critical" | "overdue" | "failing";
+  platform: string | null;
+  owner: string | null;
+  failed_assertion: string | null;
+  detected_at: string | null;
+  freshness_hours: number | null;
+  expected_freshness_hours: number | null;
+  /** How many times past its own SLA. 2.0 or more counts as critical. */
+  overdue_ratio: number | null;
+  signals: Signal[];
+  downstream_count: number;
+  upstream_count: number;
+}
+
+export type AssetHealth = "incident" | "overdue" | "healthy" | "unknown";
+
+export interface CatalogNode {
+  urn: string;
+  name: string;
+  /** Longest path from a root, so a node always draws right of its upstreams. */
+  depth: number;
+  health: AssetHealth;
+  platform: string | null;
+  owner: string | null;
+  signals: Signal[];
+  freshness_hours: number | null;
+  expected_freshness_hours: number | null;
+}
+
+export interface CatalogMap {
+  nodes: CatalogNode[];
+  edges: { from: string; to: string }[];
+  counts: {
+    total: number;
+    incident: number;
+    overdue: number;
+    healthy: number;
+  };
+}
+
+/** Real NYC taxi-zone geometry, simplified for the browser. */
+export interface TaxiZone {
+  id: string | null;
+  zone: string | null;
+  borough: string | null;
+  rings: number[][][];
+}
+
+export interface TaxiZoneSet {
+  source: string;
+  dataset_id: string;
+  note: string;
+  zones: TaxiZone[];
+}
+
+/** Readable age from a freshness lag in hours. Mirrors the agent's formatting. */
+export function humaniseHours(hours: number | null): string {
+  if (hours === null) return "unknown";
+  if (hours < 48) return `${Math.round(hours)}h`;
+  const days = hours / 24;
+  if (days < 90) return `${Math.round(days)} days`;
+  return `${(days / 365).toFixed(1)} years`;
+}

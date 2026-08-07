@@ -24,6 +24,9 @@ function baseFor(catalog: Catalog): string {
   return catalog === "live" && API_LIVE ? API_LIVE : API_DEMO;
 }
 
+/** Exported so the overview page reads the same backends as the investigation. */
+export const apiBaseFor = baseFor;
+
 /**
  * `live` talks to the FastAPI backend (and therefore, optionally, a real
  * DataHub). `replay` runs entirely in the browser off recorded agent output, so
@@ -49,8 +52,14 @@ export interface InvestigationState {
   diagnosis: Diagnosis | null;
 }
 
-export function useInvestigation(): InvestigationState {
-  const [catalog, setCatalogState] = useState<Catalog>("demo");
+export function useInvestigation(options?: {
+  /** Preselect this asset once the queue loads (deep link from the inbox). */
+  initialUrn?: string | null;
+  initialCatalog?: Catalog | null;
+}): InvestigationState {
+  const [catalog, setCatalogState] = useState<Catalog>(
+    options?.initialCatalog === "live" ? "live" : "demo",
+  );
   const [source, setSource] = useState<Source>("probing");
   const [health, setHealth] = useState<Health | null>(null);
   const [writeBack, setWriteBack] = useState(true);
@@ -97,11 +106,15 @@ export function useInvestigation(): InvestigationState {
         setIncidents(queue);
         // Only reselect while nothing is in flight, so a late upgrade cannot
         // yank an investigation the user is already watching.
-        setSelected((current) =>
-          current
-            ? (queue.find((i) => i.urn === current.urn) ?? current)
-            : (queue[0] ?? null),
-        );
+        setSelected((current) => {
+          if (current) return queue.find((i) => i.urn === current.urn) ?? current;
+          // Honour a deep link, but never invent a selection for a urn this
+          // catalog does not have.
+          const requested = options?.initialUrn
+            ? queue.find((i) => i.urn === options.initialUrn)
+            : undefined;
+          return requested ?? queue[0] ?? null;
+        });
         return info;
       } catch {
         return null;

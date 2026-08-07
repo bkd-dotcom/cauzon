@@ -34,6 +34,8 @@ class DataHubClient(Protocol):
     def get_dataset_queries(self, urn: str) -> list[dict[str, Any]]: ...
     # Read back what earlier investigations wrote, so knowledge compounds.
     def search_documents(self, query: str) -> list[dict[str, Any]]: ...
+    # Whole-catalog inventory, for the map and the triage inbox.
+    def list_assets(self) -> list[dict[str, Any]]: ...
     # mutations / write-back
     def add_tags(self, urn: str, tags: list[str]) -> None: ...
     def update_description(self, urn: str, description: str) -> None: ...
@@ -117,6 +119,7 @@ _SCENARIO_FRESHNESS = {
     },
     "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)": {
         "name": "daily_revenue",
+        "owner": "revenue-analytics@example.com",
         "last_transform_at": "today 07:12",
         "has_open_incident": True,
         "column_lineage": {"fare_amount": "revenue"},
@@ -535,6 +538,13 @@ class MockDataHubClient:
     def get_dataset_queries(self, urn: str) -> list[dict[str, Any]]:
         return self._graph.get(urn, {}).get("queries", [])
 
+    def list_assets(self) -> list[dict[str, Any]]:
+        """Every asset in the scenario graph, with its declared upstreams."""
+        return [
+            {"urn": urn, "name": node["name"], "upstreams": list(node.get("upstreams", []))}
+            for urn, node in self._graph.items()
+        ]
+
     def search_documents(self, query: str) -> list[dict[str, Any]]:
         """Find prior dossiers for an asset named in the query.
 
@@ -573,6 +583,10 @@ class MockDataHubClient:
     @property
     def writes(self) -> list[dict[str, Any]]:
         return self._writes
+
+
+# Public tuple of scenario names, so callers do not reach into _SCENARIOS.
+MOCK_SCENARIOS: tuple[str, ...] = tuple(_SCENARIOS)
 
 
 def all_mock_incidents() -> list[dict[str, Any]]:
@@ -922,6 +936,27 @@ class MCPDataHubClient:
             text = _first(stmt, "value") if isinstance(stmt, dict) else stmt
             out.append({"query": text or "", "last_run": _first(props, "lastModified", "created")})
         return out
+
+    def list_assets(self) -> list[dict[str, Any]]:
+        """Catalog inventory for the map, from tools that actually exist.
+
+        There is no "list everything" MCP tool, so this is a bounded search plus
+        a one-hop upstream lookup per hit. Bounded on purpose: a map of a
+        production catalog would be unreadable and expensive, and this view is for
+        orientation rather than completeness.
+        """
+        assets: list[dict[str, Any]] = []
+        for hit in self.search("*")[:40]:
+            urn = hit["urn"]
+            try:
+                parents = [
+                    n["urn"]
+                    for n in self.get_lineage(urn, direction="upstream", hops=1)
+                ]
+            except Exception:
+                parents = []
+            assets.append({"urn": urn, "name": hit.get("name"), "upstreams": parents})
+        return assets
 
     def search_documents(self, query: str) -> list[dict[str, Any]]:
         """Find prior Cauzon dossiers in the catalog.

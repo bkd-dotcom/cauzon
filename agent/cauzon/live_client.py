@@ -187,6 +187,12 @@ class LiveDataHubClient:
     def get_dataset_queries(self, urn: str) -> list[dict[str, Any]]:
         return []  # Socrata exposes none.
 
+    def list_assets(self) -> list[dict[str, Any]]:
+        return [
+            {"urn": a["urn"], "name": a["name"], "upstreams": list(a["upstreams"])}
+            for a in self._assets().values()
+        ]
+
     def search_documents(self, query: str) -> list[dict[str, Any]]:
         return []  # No document store to read prior dossiers from.
 

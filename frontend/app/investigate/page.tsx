@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 
 import LineageSpine from "@/components/LineageSpine";
 import {
@@ -33,6 +34,16 @@ import {
 } from "@/lib/types";
 
 export default function InvestigatePage() {
+  // useSearchParams needs a Suspense boundary under static export.
+  return (
+    <Suspense fallback={null}>
+      <Investigate />
+    </Suspense>
+  );
+}
+
+function Investigate() {
+  const params = useSearchParams();
   const {
     source,
     catalog,
@@ -47,7 +58,10 @@ export default function InvestigatePage() {
     running,
     trace,
     diagnosis,
-  } = useInvestigation();
+  } = useInvestigation({
+    initialUrn: params.get("urn"),
+    initialCatalog: params.get("catalog") === "live" ? "live" : null,
+  });
   const [inspected, setInspected] = useState<SpineNode | null>(null);
 
   const model = useMemo(() => buildSpine(trace, diagnosis), [trace, diagnosis]);
@@ -342,6 +356,12 @@ function Header({
         <span className="hidden text-xs text-muted sm:inline">
           path-grounded RCA for DataHub
         </span>
+        <Link
+          href="/overview"
+          className="text-xs text-bone-dim no-underline hover:text-jade"
+        >
+          Catalog overview
+        </Link>
       </div>
       <div className="flex items-center gap-2" title={sourceHint(source, health)}>
         <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${tone}`} />
