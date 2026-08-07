@@ -173,13 +173,30 @@ export type WriteBack =
   | { op: "update_description"; urn: string; description: string };
 
 /** What the backend reports about itself, from GET /api/health. */
+export interface LiveSource {
+  name: string;
+  url: string;
+  /** Freshness read live from the source of truth on every refresh. */
+  signals_are_live: boolean;
+  /** The catalog publishes no lineage; the graph is declared by this project. */
+  lineage_is_declared: boolean;
+  supports_writeback: boolean;
+  /** Non-null when the last refresh failed, so the UI can flag possible staleness. */
+  fetch_error: string | null;
+}
+
 export interface Health {
   status: string;
-  /** "mock" = planted in-memory graph. "mcp" = a real DataHub instance. */
-  datahub_backend: "mock" | "mcp";
+  /**
+   * "mock" = planted in-memory graph, three fixed faults.
+   * "live" = real public catalog; incident list is whatever is genuinely stale.
+   * "mcp"  = a real DataHub instance.
+   */
+  datahub_backend: "mock" | "live" | "mcp";
   write_back_allowed: boolean;
   /** Base URL of the DataHub UI, when there is a real one to link to. */
   datahub_ui_url: string | null;
+  live_source?: LiveSource | null;
 }
 
 /** Deep link to an asset in the DataHub UI, so a finding can be checked. */

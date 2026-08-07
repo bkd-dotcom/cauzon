@@ -89,10 +89,18 @@ def _lead_time(cause: CandidateCause) -> Optional[str]:
     tail = note.split("+", 1)[1]
     amount = tail.split("h", 1)[0]
     try:
-        float(amount)
+        hours = float(amount)
     except ValueError:
         return None
-    return f"~{amount}h earlier than the downstream alert"
+    # Real catalogs produce lags measured in years, where "~7800h" is accurate
+    # and unreadable.
+    if hours < 48:
+        readable = f"{hours:.0f}h"
+    elif hours < 24 * 90:
+        readable = f"{hours / 24:.0f} days"
+    else:
+        readable = f"{hours / 24 / 365:.1f} years"
+    return f"~{readable} earlier than the downstream alert"
 
 
 # Per-signal assertion templates: (kind, describe, define). Definitions are

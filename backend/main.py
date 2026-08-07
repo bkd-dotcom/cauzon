@@ -30,6 +30,7 @@ from cauzon.datahub_client import (  # noqa: E402
     all_mock_incidents,
     scenario_for_symptom,
 )
+from cauzon.live_client import LiveDataHubClient  # noqa: E402
 from cauzon.models import Incident, TraceEvent  # noqa: E402
 
 app = FastAPI(title="Cauzon API", version="0.1.0")
@@ -51,8 +52,29 @@ class InvestigateRequest(BaseModel):
     write_back: bool = True
 
 
+def _backend_kind() -> str:
+    """`mock`, `live` (public NYC Open Data), or `mcp` (a real DataHub)."""
+    return os.getenv("CAUZON_DATAHUB_BACKEND", "mock").strip().lower()
+
+
 def _using_mock() -> bool:
-    return os.getenv("CAUZON_DATAHUB_BACKEND", "mock") == "mock"
+    return _backend_kind() == "mock"
+
+
+def _using_live() -> bool:
+    return _backend_kind() == "live"
+
+
+# One client for the live source per process, so its TTL cache is shared rather
+# than refetching the catalog on every request.
+_live_client: LiveDataHubClient | None = None
+
+
+def _live() -> LiveDataHubClient:
+    global _live_client
+    if _live_client is None:
+        _live_client = LiveDataHubClient()
+    return _live_client
 
 
 def _writeback_allowed() -> bool:
@@ -65,6 +87,10 @@ def _writeback_allowed() -> bool:
     """
     if _using_mock():
         return True
+    if _using_live():
+        # NYC Open Data is read-only. Declining is honest; offering a button that
+        # silently does nothing is not.
+        return False
     return os.getenv("CAUZON_ALLOW_WRITEBACK", "").strip().lower() in {
         "1",
         "true",
@@ -85,6 +111,8 @@ def _agent(urn: str | None = None) -> CauzonAgent:
     the agent is pinned to whichever scenario owns the symptom being
     investigated rather than to the process-wide env var.
     """
+    if _using_live():
+        return CauzonAgent(client=_live())
     if urn and _using_mock():
         scenario = scenario_for_symptom(urn)
         if scenario:
@@ -100,12 +128,24 @@ def health() -> dict[str, Any]:
     argument is "only claim what you can prove" should not be vague about whether
     its own catalog is real.
     """
-    return {
+    body: dict[str, Any] = {
         "status": "ok",
-        "datahub_backend": os.getenv("CAUZON_DATAHUB_BACKEND", "mock"),
+        "datahub_backend": _backend_kind(),
         "write_back_allowed": _writeback_allowed(),
         "datahub_ui_url": _datahub_ui_url(),
     }
+    if _using_live():
+        # Say exactly which parts of this catalog are real. Signals are; lineage
+        # is declared by us. Overstating that would contradict the product.
+        body["live_source"] = {
+            "name": "NYC Open Data (Socrata)",
+            "url": "https://data.cityofnewyork.us",
+            "signals_are_live": True,
+            "lineage_is_declared": True,
+            "supports_writeback": False,
+            "fetch_error": _live().source_error,
+        }
+    return body
 
 
 @app.get("/api/incidents")
@@ -114,6 +154,9 @@ def list_incidents() -> list[dict[str, Any]]:
     # every fault type is reachable without restarting the server.
     if _using_mock():
         return all_mock_incidents()
+    if _using_live():
+        # However many are genuinely past their SLA right now — not a fixed set.
+        return _live().list_open_incidents()
     return _agent().client.list_open_incidents()
 
 

@@ -21,7 +21,12 @@ import {
 } from "@/components/panels";
 import { buildSpine } from "@/lib/spine";
 import { useInvestigation } from "@/lib/useInvestigation";
-import { datahubAssetUrl, type Health, type SpineNode } from "@/lib/types";
+import {
+  datahubAssetUrl,
+  type Health,
+  type LiveSource,
+  type SpineNode,
+} from "@/lib/types";
 
 export default function InvestigatePage() {
   const {
@@ -47,6 +52,8 @@ export default function InvestigatePage() {
       <Header source={source} health={health} />
 
       <main id="main" className="space-y-4">
+        {health?.live_source && <LiveSourceNote source={health.live_source} />}
+
         {/* ---- incident queue -------------------------------------------- */}
         <Panel
           title="Open incidents"
@@ -312,7 +319,9 @@ function Header({
         ? { label: "Recorded agent run", tone: "bg-amber" }
         : health?.datahub_backend === "mcp"
           ? { label: "Live agent · real DataHub", tone: "bg-jade" }
-          : { label: "Live agent · demo catalog", tone: "bg-jade" };
+          : health?.datahub_backend === "live"
+            ? { label: "Live agent · live public catalog", tone: "bg-jade" }
+            : { label: "Live agent · demo catalog", tone: "bg-jade" };
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-4 py-6">
@@ -332,13 +341,56 @@ function Header({
   );
 }
 
+/**
+ * Names exactly which half of a live catalog is real.
+ *
+ * Freshness here is read from the source of truth on every refresh; the lineage
+ * is ours, because Socrata publishes none. A tool whose argument is "only claim
+ * what you can prove" has to be the one thing that does not blur that.
+ */
+function LiveSourceNote({ source }: { source: LiveSource }) {
+  return (
+    <section className="plate border-l-2 border-l-jade-dim px-5 py-4">
+      <p className="label m-0">Live catalog</p>
+      <p className="prose-evidence m-0 mt-2">
+        Assets and freshness are read live from{" "}
+        <a
+          href={source.url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-bone-dim underline decoration-line-bright hover:text-jade"
+        >
+          {source.name}
+        </a>
+        , so the incidents below are whatever is genuinely past its update SLA
+        right now — the list changes as the city publishes.{" "}
+        <span className="text-muted">
+          Lineage is declared by this project, because that catalog publishes
+          none, and there is no query history to evidence a transform — findings
+          land on <em>path proven, transform unavailable</em> rather than
+          claiming more. It is read-only, so nothing is written back.
+        </span>
+      </p>
+      {source.fetch_error && (
+        <p className="prose-evidence m-0 mt-2 text-oxide">
+          Last refresh failed ({source.fetch_error}) — showing the previous
+          snapshot, which may be out of date.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function sourceHint(source: string, health: Health | null): string {
   if (source === "replay")
     return "No backend reachable, so this replays a recorded run of the real agent. Start the backend to investigate live.";
-  if (source === "live")
-    return health?.datahub_backend === "mcp"
-      ? "The agent is executing live against a real DataHub instance."
-      : "The agent is executing live against the planted demo catalog. The agent code path is identical against a real DataHub.";
+  if (source === "live") {
+    if (health?.datahub_backend === "mcp")
+      return "The agent is executing live against a real DataHub instance.";
+    if (health?.datahub_backend === "live")
+      return `Assets and freshness are read live from ${health.live_source?.name}. Lineage is declared by this project, because that catalog publishes none.`;
+    return "The agent is executing live against the planted demo catalog. The agent code path is identical against a real DataHub.";
+  }
   return "Checking whether a backend is reachable.";
 }
 
