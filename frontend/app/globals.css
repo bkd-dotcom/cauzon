@@ -198,3 +198,49 @@
   transform-origin: left center;
   animation: score-grow 0.6s cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
+
+/* The "Built with" carousel. The track holds the marks twice and slides by
+   exactly half its width, so the second copy is in the first copy's starting
+   position at the moment the animation restarts — the loop has no seam and needs
+   no JavaScript ticking every frame.
+
+   Linear on purpose: any easing makes a continuous marquee visibly pulse. */
+@keyframes marquee-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.marquee-track {
+  animation: marquee-drift var(--marquee-duration, 40s) linear infinite;
+  /* Promoted so the browser composites the slide instead of repainting 26 tiles
+     of vector artwork on every frame. */
+  will-change: transform;
+}
+
+/* Stops for anyone reading rather than glancing — hovering the strip or tabbing
+   into it. */
+.marquee:hover .marquee-track,
+.marquee:focus-within .marquee-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The blanket rule above collapses every animation to 0.01ms, which for a
+     marquee means it lurches to its end state instead of not moving. Turned off
+     outright here, and the strip becomes an ordinary scrollable row so every
+     mark is still reachable. */
+  .marquee-track {
+    animation: none;
+    transform: none;
+  }
+
+  .marquee {
+    overflow-x: auto;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+}
