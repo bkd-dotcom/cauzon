@@ -58,7 +58,7 @@ type View = "volume" | "borough";
  * is also what fills the corner the city's diagonal shape leaves blank.
  */
 const ANNOTATED: { id: string; lean: "left" | "right"; dx: number; dy: number }[] = [
-  { id: "132", lean: "right", dx: 54, dy: 42 }, // JFK, out over Jamaica Bay
+  { id: "132", lean: "right", dx: 40, dy: 74 }, // JFK, clear of the zone, over the bay
   { id: "138", lean: "right", dx: 66, dy: -46 }, // LaGuardia, out over the Sound
   { id: "161", lean: "left", dx: -74, dy: -8 }, // Midtown Center, out over the Hudson
 ];
