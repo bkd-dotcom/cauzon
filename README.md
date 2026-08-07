@@ -193,9 +193,21 @@ table's freshness. And if the aggregation fails the map falls back to borough
 shading and says why, because an unshaded choropleth reads as *no trips here* when
 it means *we could not ask*.
 
-Geometry is a generated artifact like the fixtures — real, reduced, never
-hand-edited (`scripts/build_zone_geometry.py`, Douglas-Peucker, 98,192 points to
-7,286).
+The map annotates itself — the two airports and the midtown core get leader lines
+and their real counts, chosen because four of the five busiest zones sit within a
+few blocks of each other and labelling by rank would stack them. Its frame is
+fitted to the geometry rather than the geometry scaled into a frame of some other
+shape, which is what used to leave a dead band down each side.
+
+Both the geometry and one real aggregation are generated artifacts, like the
+fixtures — real, reduced, never hand-edited
+(`scripts/build_zone_geometry.py`). Recording the aggregation is what lets the
+landing page draw true numbers with no backend to ask; the overview page still
+prefers live figures and says which it is showing.
+
+The same map appears on the landing page, because "the asset furthest past its
+SLA is a lookup table" carries no urgency as a sentence and quite a lot as a
+picture.
 
 None of the three runs an investigation. Enriching a queue has to stay cheap
 enough to load on every page view, so they use metadata reads and one-hop lineage

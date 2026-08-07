@@ -241,7 +241,6 @@ export default function CatalogMap({
                   strokeWidth="2"
                 />
                 <text x="10" y="17" fill={tone.text} fontSize="11.5" fontWeight="600">
-                  <title>{node.name}</title>
                   {ellipsise(node.name, 19)}
                 </text>
                 <text x="10" y="30" fill="var(--color-muted)" fontSize="8.5">

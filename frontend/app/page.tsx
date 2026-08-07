@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import HeroSpine from "@/components/HeroSpine";
+import ZoneMap from "@/components/ZoneMap";
 
 const REPO = "https://github.com/bkd-dotcom/cauzon";
 
@@ -171,6 +172,53 @@ export default function LandingPage() {
               </li>
             ))}
           </ol>
+        </section>
+
+        {/* ---- the blast radius, in physical space ----------------------- */}
+        <section className="rule py-16">
+          <h2 className="m-0 text-2xl font-semibold tracking-tight">
+            What a stale lookup table actually costs
+          </h2>
+          <div className="mt-4 grid gap-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+            <div className="min-w-0">
+              <p className="prose-evidence m-0">
+                Cauzon&rsquo;s live catalog reads real assets from{" "}
+                <a
+                  href="https://data.cityofnewyork.us"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-bone-dim underline decoration-line-bright hover:text-jade"
+                >
+                  NYC Open Data
+                </a>
+                . The asset furthest past its own freshness SLA is a lookup table:
+                the one that defines the city&rsquo;s 263 taxi zones. Nothing about
+                that sentence conveys any urgency.
+              </p>
+              <p className="prose-evidence mt-3">
+                This is the same fact drawn instead. Every one of{" "}
+                <span className="text-amber">38,310,226 trips</span> resolves its
+                pickup through one of those 263 polygons, and the brightest of them
+                is JFK at nearly two million. A stale zone table is stale{" "}
+                <span className="text-oxide">geography</span> — not a stale row
+                count.
+              </p>
+              <p className="prose-evidence mt-3 text-muted">
+                Which is the argument for walking lineage at all. An alert names
+                the asset that broke; the graph is what tells you how far the
+                consequences reach.
+              </p>
+              <Link
+                href="/overview"
+                className="mt-5 inline-block border border-line px-4 py-2.5 text-[11px] font-semibold tracking-[0.12em] text-bone-dim uppercase no-underline hover:border-line-bright hover:text-jade"
+              >
+                Open the catalog overview
+              </Link>
+            </div>
+            <div className="min-w-0">
+              <ZoneMap variant="brief" stale />
+            </div>
+          </div>
         </section>
 
         {/* ---- knowledge compounds -------------------------------------- */}

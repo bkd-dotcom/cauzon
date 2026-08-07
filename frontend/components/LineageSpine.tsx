@@ -501,8 +501,10 @@ function Plate({
           </text>
         )}
 
+        {/* The full name is on the group's aria-label and in the detail panel a
+            click away. Not a <title>: React 19 hoists those as document
+            metadata, which breaks hydration. */}
         <text x="12" y="36" fill={tone.text} fontSize={nameSize} fontWeight="600">
-          <title>{node.name}</title>
           {label}
         </text>
         {rejected && (

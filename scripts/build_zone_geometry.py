@@ -1,12 +1,20 @@
-"""Generate the simplified NYC taxi-zone geometry the map renders.
+"""Generate the NYC taxi-zone geometry and volume snapshot the map renders.
 
-The real geometry is 263 zones and ~98,000 points (3.9 MB), which is too much to
-ship to a browser. This fetches it from the same live dataset Cauzon investigates
-and simplifies it with Douglas-Peucker, keeping the shapes recognisable at map
-size while cutting the payload by roughly an order of magnitude.
+Two artifacts in one file, both real and both reduced:
 
-The output is a generated artifact, like the fixtures — real data, reduced, never
-hand-edited:
+  * **Geometry.** 263 zones and ~98,000 points (3.9 MB) is too much to ship to a
+    browser, so this fetches it from the same live dataset Cauzon investigates and
+    simplifies it with Douglas-Peucker, keeping the shapes recognisable at map
+    size while cutting the payload by roughly an order of magnitude.
+
+  * **A recorded volume snapshot.** The live backend aggregates real pickups per
+    zone on request, but the landing page is a static export with no backend to
+    ask. Rather than showing an unshaded map there — which would read as "no trips
+    here" — this records one real aggregation so the page always has true numbers,
+    labelled as a recording. The overview page still prefers live figures and only
+    falls back to this.
+
+Like the fixtures: real data, reduced, never hand-edited.
 
     python scripts/build_zone_geometry.py
 """
@@ -25,6 +33,16 @@ OUT = ROOT / "frontend" / "lib" / "taxi_zones.json"
 # about the same asset rather than two similar-looking things.
 DATASET_ID = "8meu-9t5y"
 SOURCE = f"https://data.cityofnewyork.us/resource/{DATASET_ID}.geojson?$limit=300"
+
+# The trip dataset whose pickups are counted per zone. Kept in step with
+# cauzon.zone_volume so the recorded snapshot and the live figures describe the
+# same thing.
+TRIP_DATASET_ID = "4b4i-vvec"
+TRIP_DATASET_LABEL = "2023 Yellow Taxi Trip Data"
+VOLUME_SOURCE = (
+    f"https://data.cityofnewyork.us/resource/{TRIP_DATASET_ID}.json"
+    "?$select=pulocationid,count(1)%20as%20trips&$group=pulocationid&$limit=400"
+)
 
 # Degrees. ~0.0004 is around 40 m — well below one screen pixel at city scale.
 TOLERANCE = 0.0004
@@ -115,6 +133,24 @@ def main() -> None:
             }
         )
 
+    print(f"fetching volume {VOLUME_SOURCE}")
+    with urllib.request.urlopen(VOLUME_SOURCE, timeout=120) as response:
+        volume_rows = json.loads(response.read().decode("utf-8"))
+
+    trips: dict[str, int] = {}
+    for row in volume_rows:
+        zone_id, count = row.get("pulocationid"), row.get("trips")
+        if zone_id is None or count is None:
+            continue
+        try:
+            trips[str(int(zone_id))] = int(count)
+        except (TypeError, ValueError):
+            # Dropped rather than zeroed: a zero would claim a real zone had no
+            # traffic, which is a different statement from "unparseable".
+            continue
+    if not trips:
+        raise SystemExit("volume aggregation returned no usable rows")
+
     payload = {
         "source": f"https://data.cityofnewyork.us/d/{DATASET_ID}",
         "dataset_id": DATASET_ID,
@@ -123,6 +159,16 @@ def main() -> None:
             f"(tolerance {TOLERANCE} degrees) for browser delivery."
         ),
         "zones": zones,
+        # A real aggregation, recorded so a static page has true numbers to draw.
+        "volume": {
+            "trips": trips,
+            "total_trips": sum(trips.values()),
+            "zones_covered": len(trips),
+            "dataset_id": TRIP_DATASET_ID,
+            "dataset_label": TRIP_DATASET_LABEL,
+            "source_url": f"https://data.cityofnewyork.us/d/{TRIP_DATASET_ID}",
+            "recorded": True,
+        },
     }
     OUT.write_text(json.dumps(payload, separators=(",", ":")) + "\n")
 
@@ -131,6 +177,7 @@ def main() -> None:
     print(f"  zones  {len(zones)}")
     print(f"  points {points_before} -> {points_after} "
           f"({points_after / max(points_before, 1):.1%})")
+    print(f"  volume {len(trips)} zones, {sum(trips.values()):,} trips")
     print(f"  size   {size_kb:.0f} KB")
 
 

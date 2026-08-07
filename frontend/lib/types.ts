@@ -338,8 +338,13 @@ export interface ZoneVolume {
   dataset_id: string;
   dataset_label: string;
   source_url: string;
-  /** True when the fetch failed and this is a reused or empty snapshot. */
-  stale: boolean;
+  /**
+   * Set by the live endpoint when its fetch failed and this is a reused or empty
+   * snapshot. Absent on a build-time recording, which was never fetched live.
+   */
+  stale?: boolean;
+  /** Set on the snapshot recorded into the bundle at build time. */
+  recorded?: boolean;
   error?: string;
 }
 
@@ -356,6 +361,12 @@ export interface TaxiZoneSet {
   dataset_id: string;
   note: string;
   zones: TaxiZone[];
+  /**
+   * A real aggregation recorded at build time, so a static page with no backend
+   * still draws true numbers instead of an unshaded map. The live endpoint is
+   * preferred when one is reachable.
+   */
+  volume?: ZoneVolume;
 }
 
 /** Readable age from a freshness lag in hours. Mirrors the agent's formatting. */
