@@ -1,0 +1,12 @@
+# Cloudflare Pages project for the Cauzon demo site.
+#
+# Deploy with:  cd frontend && npm run deploy:cf
+#
+# Two things differ from the GitHub Pages build and both matter:
+#   - Cloudflare serves from the root, so NEXT_PUBLIC_BASE_PATH must be empty
+#     (GitHub Pages serves from /<repo> and needs the prefix).
+#   - The origin https://cauzon.pages.dev must be in the backend's
+#     CAUZON_CORS_ORIGINS, or every API call is blocked by the browser.
+name = "cauzon"
+pages_build_output_dir = "frontend/out"
+compatibility_date = "2026-08-07"

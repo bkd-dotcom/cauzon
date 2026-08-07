@@ -107,6 +107,10 @@ Three scenarios, each planting a fault a *different* signal has to catch:
 
 ## Try it
 
+**Live demo:** https://cauzon.pages.dev — no install, no signup. The header
+states whether you are seeing a live agent or a recorded run, and whether the
+catalog behind it is the planted demo graph or a real DataHub instance.
+
 The deployed app replays recorded runs of the real agent in the browser, so it
 works with nothing installed. To run it against your own DataHub:
 

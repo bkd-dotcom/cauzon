@@ -12,8 +12,8 @@ the next person — or agent — inherits the answer instead of re-deriving it.
 > Built for **Build with DataHub: The Agent Hackathon** — *Agents That Do Real
 > Work*.
 
-**Try it — nothing to install:** [binaydalai.me/cauzon](https://binaydalai.me/cauzon/)
-· [run an investigation](https://binaydalai.me/cauzon/investigate/)
+**Try it — nothing to install:** [cauzon.pages.dev](https://cauzon.pages.dev/)
+· [run an investigation](https://cauzon.pages.dev/investigate/)
 
 The app talks to a live agent on Cloud Run, streaming each reasoning step over a
 WebSocket as it happens. The header states exactly what you are looking at —

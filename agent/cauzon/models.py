@@ -110,6 +110,9 @@ class ProofPath:
     transform_sql: Optional[str] = None  # the SQL that carried the fault downstream
     causal_edge_index: Optional[int] = None  # which edge transform_sql came from
     grounding: GroundingLevel = GroundingLevel.UNGROUNDED
+    # Present only when column-level lineage is available. None means the proof
+    # holds at table level and says nothing about which field.
+    column_path: Optional[ColumnPath] = None
 
     @property
     def verified(self) -> bool:
@@ -127,7 +130,107 @@ class ProofPath:
             "grounding": self.grounding.value,
             "grounding_label": self.grounding.label,
             "verified": self.verified,
+            "column_path": self.column_path.to_dict() if self.column_path else None,
         }
+
+
+@dataclass
+class ColumnPath:
+    """Which *field* carried the fault, when column lineage is available.
+
+    A further rung on the same ladder as GroundingLevel: naming the column is
+    strictly stronger than naming the table, and when DataHub has no
+    column-level lineage the proof says so rather than implying it.
+    """
+
+    cause_field: str  # e.g. "amount"
+    symptom_field: str  # e.g. "revenue"
+    fields: list[str] = field(default_factory=list)  # ordered cause -> symptom
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class ImpactedAsset:
+    """Something downstream of the symptom that inherits the same bad data."""
+
+    urn: str
+    name: str
+    hops_from_symptom: int
+    kind: str = "dataset"  # dataset | dashboard
+    owner: Optional[str] = None
+    # True when this asset has its own failing assertion. The dangerous ones are
+    # the assets that are wrong and *not* alerting — nobody is looking at them.
+    is_alerting: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class BlastRadius:
+    """Everything the fault reached, not just the asset that happened to alert.
+
+    Cauzon walks upstream to find the cause; this is the other direction. An
+    on-call engineer's next question after "what broke it" is "what else is
+    wrong that nobody has noticed yet".
+    """
+
+    symptom_urn: str
+    impacted: list[ImpactedAsset] = field(default_factory=list)
+
+    @property
+    def count(self) -> int:
+        return len(self.impacted)
+
+    @property
+    def silent(self) -> list[ImpactedAsset]:
+        """Affected but not alerting — the ones that will surprise someone."""
+        return [a for a in self.impacted if not a.is_alerting]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "symptom_urn": self.symptom_urn,
+            "impacted": [a.to_dict() for a in self.impacted],
+            "count": self.count,
+            "silent_count": len(self.silent),
+        }
+
+
+@dataclass
+class ProposedAssertion:
+    """The check that would have caught this earlier, and closer to the source.
+
+    Diagnosing a recurring failure without proposing the missing guardrail leaves
+    the same incident free to happen again. This is the part that makes the
+    write-back preventative rather than archival.
+    """
+
+    target_urn: str
+    target_name: str
+    kind: str  # freshness | volume | uniqueness | schema_contract
+    description: str
+    definition: str  # concrete, copyable assertion spec
+    rationale: str
+    # Roughly how much earlier this would have fired than the alert that did.
+    lead_time: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class TimelineEvent:
+    """One moment in the fault's propagation, ordered in time not topology."""
+
+    at: str
+    asset_name: str
+    label: str
+    kind: str  # fault_origin | transform_ran | assertion_fired | detected
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass
@@ -228,6 +331,9 @@ class Diagnosis:
     confidence_breakdown: Optional[ConfidenceBreakdown] = None
     grounding: GroundingLevel = GroundingLevel.UNGROUNDED
     recurrence: Optional[Recurrence] = None
+    blast_radius: Optional[BlastRadius] = None
+    proposed_assertion: Optional[ProposedAssertion] = None
+    timeline: list[TimelineEvent] = field(default_factory=list)
     narrative: Optional[str] = None  # optional LLM-written explanation
     narrative_source: str = "template"  # template | llm
 
@@ -252,6 +358,11 @@ class Diagnosis:
             "grounding_label": self.grounding.label,
             "grounded": self.grounded,
             "recurrence": self.recurrence.to_dict() if self.recurrence else None,
+            "blast_radius": self.blast_radius.to_dict() if self.blast_radius else None,
+            "proposed_assertion": (
+                self.proposed_assertion.to_dict() if self.proposed_assertion else None
+            ),
+            "timeline": [e.to_dict() for e in self.timeline],
             "narrative": self.narrative,
             "narrative_source": self.narrative_source,
         }
