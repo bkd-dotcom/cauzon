@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import HeroSpine from "@/components/HeroSpine";
+import StackCatalog from "@/components/StackCatalog";
 import ZoneMap from "@/components/ZoneMap";
 
 const REPO = "https://github.com/bkd-dotcom/cauzon";
@@ -262,6 +263,8 @@ export default function LandingPage() {
             </div>
           </div>
         </section>
+
+        <StackCatalog />
 
         <section className="rule flex flex-wrap items-center justify-between gap-6 py-16">
           <div>
