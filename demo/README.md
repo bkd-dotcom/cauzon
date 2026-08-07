@@ -1,7 +1,8 @@
 # Demo video — script and shot list
 
 The hackathon requires a public video **under 3 minutes**. This script runs
-about 2:40 at a normal speaking pace, which leaves room to breathe.
+about 2:55 at a normal speaking pace — close to the limit, so trim rather than
+rush if a take runs long.
 
 **One idea to land:** Cauzon rejects the most suspicious asset in the graph
 because it cannot prove a path to it. Everything else is supporting detail. If a
@@ -36,8 +37,8 @@ are legible after compression, and hide bookmarks and notifications.
 | 6 | 1:35–1:50 | Jade spine draws to `raw_trips` | "The real origin is `raw_trips`, two hops up. Cauzon proves it: path reconstructed from real edges, plus the transform SQL that carried the fault downstream." |
 | 7 | 1:50–2:05 | Confidence panel | "Confidence isn't a magic number. It's grounding times signal strength times origin purity, and every factor states its own reason." |
 | 8 | 2:05–2:25 | Scroll: blast radius, then missing guardrail | "It doesn't stop at the cause. Three downstream assets inherit this data and none of them is alerting — somebody is reading those right now. And it read its own prior dossiers back: this asset has stalled twice before, so instead of 'backfill this window' it proposes the freshness check that would have caught it 27 hours earlier, at the source." |
-| 9 | 2:20–2:35 | Write-back receipts, then the DataHub UI showing the `root-cause` tag | "Then it files everything back: the dossier, the tag, the owner. The next person inherits the answer instead of re-deriving it." |
-| 10 | 2:35–2:50 | `contrib/datahub-skills-pr/` or the open PR | "And the same technique is contributed upstream as a DataHub Skill, so any MCP-connected agent can do path-grounded RCA. Every root cause, proven from the source." |
+| 9 | 2:25–2:40 | Write-back receipts, then the DataHub UI showing the `root-cause` tag | "Then it files everything back: the dossier, the tag, the owner. The next person inherits the answer instead of re-deriving it." |
+| 10 | 2:40–2:55 | `contrib/datahub-skills-pr/` or the open PR | "And the same technique is contributed upstream as a DataHub Skill, so any MCP-connected agent can do path-grounded RCA. Every root cause, proven from the source." |
 
 ## If you have less time
 
