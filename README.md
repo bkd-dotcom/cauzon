@@ -91,6 +91,33 @@ ingestion job, the recommendation stops being "backfill this window" and becomes
   It receives nothing ungrounded, cannot reach any decision field, and its output
   is discarded if it invents a URN.
 
+## Beyond the cause
+
+Naming the culprit is where most tools stop. It is not where the on-call
+engineer's questions stop.
+
+**Column-level proof.** When the catalog has column lineage, the proof names the
+*field* rather than the table: the fault entered at `raw_orders.amount` and
+surfaced as `weekly_sales.revenue`. A gap anywhere in that chain produces no
+column claim rather than a partial one — the same discipline as the grounding
+ladder.
+
+**How it propagated.** The graph shows where the fault travelled; the timeline
+shows *when*, which is what makes "two downstream transforms ran on data that was
+already bad" a fact rather than an inference.
+
+**Blast radius.** The asset that alerted is rarely the only one affected — it is
+just the one that happened to have an assertion on it. Cauzon walks downstream
+too, and flags the assets that are wrong **and not alerting**, because those are
+the ones somebody is reading and trusting right now.
+
+**The missing guardrail.** A recurring failure diagnosed without a proposed check
+is free to recur. Cauzon proposes the assertion that would have caught this at the
+*origin* rather than at the dashboard, with a copyable definition built from real
+identifiers and an estimate of the lead time it would have bought — 27 hours, in
+the freshness scenario. It tags the asset `needs-assertion` so the gap is
+findable by search, not buried in one dossier.
+
 ## The investigation loop
 
 | Phase | What Cauzon does | DataHub tools |
@@ -100,6 +127,10 @@ ingestion job, the recommendation stops being "backfill this window" and becomes
 | **Hypothesize** | Rank on freshness lag, volume anomaly, schema change, key fanout. A node scores as the *origin* when it carries the fault and none of its upstreams do | `get_entities`, `list_schema_fields` |
 | **Prove** | Reconstruct the path from real edges; capture the transform SQL | `get_lineage_paths_between`, `get_dataset_queries` |
 | **File** | Persist the dossier, tag the culprit, note the owner, read prior dossiers | `save_document`, `add_tags`, `update_description`, `search_documents` |
+
+Plus, once a cause is proven: walk downstream for the blast radius, follow column
+lineage to the field, order the propagation in time, and propose the missing
+assertion.
 
 ## Quickstart
 
@@ -207,7 +238,7 @@ templates, so tests are hermetic and a demo cannot fail on a network call.
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 45 tests
+pytest -q          # 80 tests
 ```
 
 The suite is deliberately adversarial about the central claim: a hostile narrator

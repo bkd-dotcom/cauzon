@@ -68,6 +68,23 @@ catalog with `search_documents`. On the third stall of the same ingestion job th
 recommendation stops being "backfill this window" and becomes "the schedule is
 the defect." The knowledge compounds instead of being re-derived.
 
+**It does not stop at the cause.** Four things follow the verdict, because naming
+the culprit is not where the on-call engineer's questions stop:
+
+- **Column-level proof** — when column lineage exists, the proof names the field
+  (`amount` -> `revenue`), not just the table. A gap in the chain yields no column
+  claim rather than a partial one.
+- **Propagation timeline** — the fault ordered in time, so "two downstream
+  transforms ran on data that was already bad" is visible rather than inferred.
+- **Blast radius** — the alerting asset is rarely the only affected one. Cauzon
+  walks downstream and flags the assets that are wrong *and not alerting*, since
+  those are the ones somebody is trusting right now. Three, in the freshness
+  scenario, all silent.
+- **The missing guardrail** — the assertion that would have caught this at the
+  origin rather than the dashboard, with a copyable definition built from real
+  identifiers and the lead time it would have bought (~27h). The asset is tagged
+  `needs-assertion` so the gap is searchable.
+
 ## Grounded in current research
 
 - **RCRank** (VLDB 2025) — multimodal ranking beats a single anomaly score
@@ -142,6 +159,6 @@ traversal.
 ## What I'd do next
 
 Learn the signal weights from resolved incidents instead of hand-tuning them;
-support column-level lineage so the proof can name the column that broke rather
-than the table; and file a DataHub *proposal* instead of a direct mutation when
-the culprit sits in a governed domain.
+file a DataHub *proposal* instead of a direct mutation when the culprit sits in a
+governed domain; and create the proposed assertion in DataHub directly rather
+than handing over its definition.
