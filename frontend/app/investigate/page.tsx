@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import LineageSpine from "@/components/LineageSpine";
 import {
@@ -63,6 +63,23 @@ function Investigate() {
     initialCatalog: params.get("catalog") === "live" ? "live" : null,
   });
   const [inspected, setInspected] = useState<SpineNode | null>(null);
+
+  // Arriving from a triage row means the operator already chose this incident, so
+  // run it rather than making them press a second button with the same label.
+  //
+  // This cannot write to a real catalog without being asked: write-back defaults
+  // on only for the mock backend, and any deployment can withhold it entirely.
+  // Guarded by a ref because the probe upgrades from replay to live mid-flight,
+  // and a second run would restart an investigation already on screen.
+  const deepLinkUrn = params.get("urn");
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRan.current || !deepLinkUrn) return;
+    if (source === "probing" || running || diagnosis) return;
+    if (selected?.urn !== deepLinkUrn) return;
+    autoRan.current = true;
+    void run();
+  }, [deepLinkUrn, source, running, diagnosis, selected, run]);
 
   const model = useMemo(() => buildSpine(trace, diagnosis), [trace, diagnosis]);
   const rejected = diagnosis?.ranked_candidates.filter((c) => c.rejected_reason) ?? [];
