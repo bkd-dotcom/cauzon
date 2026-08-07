@@ -36,6 +36,16 @@ column renamed four hours ago — and it scores highest at 8.0. Cauzon rejects i
 because no lineage edge connects it to the symptom. The real origin is
 `raw_trips` at 5.0, two hops upstream, and that one it proves.
 
+Because an investigation starts from a URN, the app also answers the question
+that comes first. A **triage inbox** lists every open incident, ordered by how far
+past its *own* SLA each asset is — a daily feed two days late is a live problem, an
+annual archive two months late is not — with the downstream count and the owner,
+and a link straight into the investigation. A **catalog map** draws every asset by
+depth, so upstream is a direction you can point at and one cause feeding three
+incidents is visible as a shape. And for the live catalog, a **zone map** of the
+263 real taxi zones the stale lookup table defines, because a stale zone table is
+stale geography, not just a stale row count.
+
 ## How it works
 
 Five phases against the DataHub MCP server, each streamed to the UI as it
@@ -139,6 +149,10 @@ Three scenarios, each planting a fault a *different* signal has to catch:
 **Live demo:** https://cauzon.pages.dev — no install, no signup. The header
 states whether you are seeing a live agent or a recorded run, and whether the
 catalog behind it is the planted demo graph or a real DataHub instance.
+
+- [`/overview`](https://cauzon.pages.dev/overview/) — triage inbox, catalog map,
+  zone map
+- [`/investigate`](https://cauzon.pages.dev/investigate/) — run the agent
 
 The deployed app replays recorded runs of the real agent in the browser, so it
 works with nothing installed. To run it against your own DataHub:

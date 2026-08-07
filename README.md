@@ -148,6 +148,44 @@ identifiers and an estimate of the lead time it would have bought — 27 hours, 
 the freshness scenario. It tags the asset `needs-assertion` so the gap is
 findable by search, not buried in one dossier.
 
+## Before you have picked an incident
+
+An investigation starts from a URN, which assumes you already know which URN.
+Three catalog-wide views answer the question that comes first — at `/overview`,
+reading through the same client protocol as the agent, so each works over the
+planted graph, the live public catalog, and a real DataHub.
+
+**Triage inbox.** Every open incident, ordered so you can pick one. Sorted on how
+far past its *own* SLA each asset is rather than on absolute staleness — a daily
+feed two days late is a live problem, an annual archive two months late is not.
+Each row carries the downstream count as a proxy for what is at stake, the owner
+so it can be assigned, and a link that opens the investigation for that URN.
+
+Severity names the problem the asset actually has. `critical` is at least twice
+its SLA, `overdue` is past it, and `failing` is an assertion failing while
+freshness is fine — because a row that reads `0.17× SLA` beside the word
+*overdue* tells the operator two incompatible things at once.
+
+**Catalog map.** Every asset and edge at once, health marked in the same palette
+the investigation uses. Laid out by depth, so a node always draws to the right of
+everything it depends on: *upstream* becomes a direction you can see rather than a
+chain you have to trace, and one upstream cause feeding three separate incidents
+is visible as a shape. Nodes within a column are ordered by their parents'
+barycentre, so edges don't cross for reasons that are purely alphabetical.
+
+**Zone map.** The 263 real taxi zones the stale lookup table defines, drawn from
+the same dataset the live backend reports on. This is the one view that is not
+about lineage, and it earns its place by giving the abstraction a footprint: every
+trip record downstream resolves its pickup and dropoff through one of these
+polygons, so a stale zone table is stale *geography*, not just a stale row count.
+Geometry is a generated artifact like the fixtures — real, reduced, never
+hand-edited (`scripts/build_zone_geometry.py`, Douglas-Peucker, 98,192 points to
+7,286).
+
+None of the three runs an investigation. Enriching a queue has to stay cheap
+enough to load on every page view, so they use metadata reads and one-hop lineage
+only.
+
 ## The investigation loop
 
 | Phase | What Cauzon does | DataHub tools |
@@ -269,13 +307,17 @@ templates, so tests are hermetic and a demo cannot fail on a network call.
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 101 tests
+pytest -q          # 118 tests
 ```
 
 The suite is deliberately adversarial about the central claim: a hostile narrator
 cannot flip the verdict, a path without transform SQL downgrades instead of
 overclaiming, an evidence-free graph produces no write-back at all, and the
 better-scoring decoy must be rejected rather than blamed.
+
+The catalog views are held to the two properties that would mislead if they
+broke: a severity label can never contradict the ratio printed beside it, and no
+node may be laid out to the left of something it depends on.
 
 ## Open-source contribution
 
@@ -299,6 +341,7 @@ cauzon/
 │   ├── datahub_client.py      # MCP client + mock backend with three planted faults
 │   ├── reasoner.py            # optional Claude narration, structurally unable to decide
 │   ├── models.py              # grounding ladder, confidence factors, proof path
+│   ├── overview.py            # triage inbox + catalog map (metadata reads only)
 │   └── cli.py
 ├── backend/main.py            # FastAPI + WebSocket live trace
 ├── frontend/                  # Next.js app — landing page + the investigation UI
