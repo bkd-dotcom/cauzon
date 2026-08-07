@@ -5,13 +5,17 @@ import { useMemo, useState } from "react";
 
 import LineageSpine from "@/components/LineageSpine";
 import {
+  AssertionPanel,
+  BlastRadiusPanel,
   ConfidencePanel,
   EvidencePanel,
   FixPanel,
   GroundingBadge,
   Panel,
   ProofPanel,
+  Prose,
   RecurrencePanel,
+  TimelinePanel,
   TraceTimeline,
   WritebackPanel,
 } from "@/components/panels";
@@ -146,7 +150,9 @@ export default function InvestigatePage() {
                       ranked first · score {candidate.score.toFixed(1)}
                     </span>
                   </p>
-                  <p className="prose-evidence m-0 mt-1">{candidate.rejected_reason}</p>
+                  <p className="prose-evidence m-0 mt-1">
+                    <Prose text={candidate.rejected_reason!} />
+                  </p>
                 </div>
               ))}
               <p className="prose-evidence m-0 border-t border-line pt-3 text-muted">
@@ -185,7 +191,9 @@ export default function InvestigatePage() {
                   </a>
                 )}
                 {diagnosis.narrative && (
-                  <p className="prose-evidence mt-3 mb-0">{diagnosis.narrative}</p>
+                  <p className="prose-evidence mt-3 mb-0">
+                    <Prose text={diagnosis.narrative} />
+                  </p>
                 )}
               </Panel>
               <Panel title="Evidence">
@@ -230,6 +238,39 @@ export default function InvestigatePage() {
             </Panel>
           )}
         </div>
+
+        {diagnosis && (diagnosis.timeline?.length ?? 0) > 0 && (
+          <Panel
+            title="How it propagated"
+            aside={<span className="label">{diagnosis.timeline!.length} steps</span>}
+          >
+            <TimelinePanel events={diagnosis.timeline!} />
+          </Panel>
+        )}
+
+        {diagnosis?.blast_radius && (
+          <Panel
+            title="Blast radius"
+            aside={
+              diagnosis.blast_radius.silent_count > 0 ? (
+                <span className="label text-oxide">
+                  {diagnosis.blast_radius.silent_count} not alerting
+                </span>
+              ) : null
+            }
+          >
+            <BlastRadiusPanel blast={diagnosis.blast_radius} />
+          </Panel>
+        )}
+
+        {diagnosis?.proposed_assertion && (
+          <Panel
+            title="Missing guardrail"
+            aside={<span className="label">would have caught this at the source</span>}
+          >
+            <AssertionPanel proposal={diagnosis.proposed_assertion} />
+          </Panel>
+        )}
 
         {diagnosis?.recurrence?.is_recurring && (
           <Panel

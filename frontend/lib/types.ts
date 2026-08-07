@@ -49,6 +49,48 @@ export interface ProofEdge {
   via_query?: string | null;
 }
 
+/** Which field carried the fault, when column-level lineage exists. */
+export interface ColumnPath {
+  cause_field: string;
+  symptom_field: string;
+  /** Ordered cause -> symptom, one entry per node on the proof path. */
+  fields: string[];
+}
+
+export interface ImpactedAsset {
+  urn: string;
+  name: string;
+  hops_from_symptom: number;
+  kind: "dataset" | "dashboard";
+  owner: string | null;
+  /** False means it is wrong and nobody is being told — the dangerous case. */
+  is_alerting: boolean;
+}
+
+export interface BlastRadius {
+  symptom_urn: string;
+  impacted: ImpactedAsset[];
+  count: number;
+  silent_count: number;
+}
+
+export interface ProposedAssertion {
+  target_urn: string;
+  target_name: string;
+  kind: "freshness" | "volume" | "uniqueness" | "schema_contract";
+  description: string;
+  definition: string;
+  rationale: string;
+  lead_time: string | null;
+}
+
+export interface TimelineEvent {
+  at: string;
+  asset_name: string;
+  label: string;
+  kind: "fault_origin" | "transform_ran" | "assertion_fired" | "detected";
+}
+
 export interface ProofPath {
   symptom_urn: string;
   cause_urn: string;
@@ -61,6 +103,8 @@ export interface ProofPath {
   grounding: GroundingLevel;
   grounding_label: string;
   verified: boolean;
+  /** Null when the catalog has no column-level lineage to follow. */
+  column_path: ColumnPath | null;
 }
 
 export interface ConfidenceBreakdown {
@@ -105,6 +149,11 @@ export interface Diagnosis {
   grounding_label: string;
   grounded: boolean;
   recurrence: Recurrence | null;
+  // Optional, not just nullable: an older backend omits these keys entirely.
+  // The UI deploys independently of the API, so it must tolerate the skew.
+  blast_radius?: BlastRadius | null;
+  proposed_assertion?: ProposedAssertion | null;
+  timeline?: TimelineEvent[];
   narrative: string | null;
   narrative_source: "template" | "llm";
   /** Attached by the API layer, not the agent core. */
@@ -160,6 +209,16 @@ export const SIGNAL_LABELS: Record<Signal, string> = {
   failed_assertion: "failed assertion",
   recent_query_change: "query change",
   upstream_incident: "upstream incident",
+};
+
+export const ASSERTION_KIND_LABELS: Record<
+  ProposedAssertion["kind"],
+  string
+> = {
+  freshness: "Freshness check",
+  volume: "Volume check",
+  uniqueness: "Uniqueness check",
+  schema_contract: "Schema contract",
 };
 
 export const PHASE_LABELS: Record<Phase, string> = {

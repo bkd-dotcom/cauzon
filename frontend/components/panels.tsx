@@ -11,15 +11,19 @@
 
 import {
   PHASE_LABELS,
+  ASSERTION_KIND_LABELS,
   SIGNAL_LABELS,
   datahubAssetUrl,
   shortName,
+  type BlastRadius,
   type ConfidenceBreakdown,
   type Diagnosis,
   type Phase,
   type ProofPath,
+  type ProposedAssertion,
   type RecommendedFix,
   type Recurrence,
+  type TimelineEvent,
   type TraceEvent,
   type WriteBack,
 } from "@/lib/types";
@@ -31,6 +35,37 @@ const PHASE_TONE: Record<Phase, string> = {
   prove: "text-jade",
   writeback: "text-jade",
 };
+
+/**
+ * Render `backticked` spans as code.
+ *
+ * The agent's prose is written once and consumed twice: as Markdown in the
+ * dossier it writes to DataHub, and as text here. Backticks are correct in the
+ * first and would show up as literal characters in the second, so the UI
+ * interprets them rather than the agent maintaining two phrasings.
+ */
+export function Prose({
+  text,
+  className = "",
+}: {
+  text: string;
+  className?: string;
+}) {
+  const parts = text.split("`");
+  return (
+    <span className={className}>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <code key={i} className="font-mono text-[0.9em] text-bone">
+            {part}
+          </code>
+        ) : (
+          part
+        ),
+      )}
+    </span>
+  );
+}
 
 export function Panel({
   title,
@@ -111,7 +146,7 @@ export function EvidencePanel({ diagnosis }: { diagnosis: Diagnosis }) {
         {cause.evidence_notes.map((note, i) => (
           <li key={i} className="flex gap-3">
             <span aria-hidden className="mt-[7px] h-1 w-1 shrink-0 bg-jade" />
-            <span className="prose-evidence">{note}</span>
+            <Prose text={note} className="prose-evidence" />
           </li>
         ))}
       </ul>
@@ -195,6 +230,36 @@ export function ProofPanel({ proof }: { proof: ProofPath }) {
         ))}
       </ol>
 
+      {/* Column-level proof, when the catalog can support it. Naming the field
+          is strictly stronger than naming the table. */}
+      {proof.column_path && (
+        <div className="well p-3">
+          <p className="label m-0 mb-2 text-jade">Field that carried the fault</p>
+          <ol className="m-0 flex list-none flex-wrap items-center gap-x-2 gap-y-1 p-0">
+            {proof.column_path.fields.map((f, i) => (
+              <li key={`${f}-${i}`} className="flex items-center gap-2">
+                <code
+                  className={`text-xs ${
+                    i === 0
+                      ? "text-jade"
+                      : i === proof.column_path!.fields.length - 1
+                        ? "text-amber"
+                        : "text-bone-dim"
+                  }`}
+                >
+                  {f}
+                </code>
+                {i < proof.column_path!.fields.length - 1 && (
+                  <span aria-hidden className="text-muted">
+                    →
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
       {proof.transform_sql ? (
         <div>
           <p className="label m-0 mb-2">
@@ -221,13 +286,19 @@ export function ProofPanel({ proof }: { proof: ProofPath }) {
 export function FixPanel({ fix }: { fix: RecommendedFix }) {
   return (
     <div className="space-y-3">
-      <p className="prose-evidence m-0">{fix.summary}</p>
+      <p className="prose-evidence m-0">
+        <Prose text={fix.summary} />
+      </p>
       {fix.action && (
         <pre className="well m-0 overflow-x-auto p-3 text-[12.5px] leading-relaxed text-bone-dim">
           {fix.action}
         </pre>
       )}
-      {fix.action_note && <p className="prose-evidence m-0 text-muted">{fix.action_note}</p>}
+      {fix.action_note && (
+        <p className="prose-evidence m-0 text-muted">
+          <Prose text={fix.action_note} />
+        </p>
+      )}
     </div>
   );
 }
@@ -311,5 +382,129 @@ export function GroundingBadge({ diagnosis }: { diagnosis: Diagnosis }) {
     >
       {diagnosis.grounding_label}
     </span>
+  );
+}
+
+
+/** Where else the fault landed. The alerting asset is rarely the only victim. */
+export function BlastRadiusPanel({ blast }: { blast: BlastRadius }) {
+  if (!blast.count) {
+    return (
+      <p className="prose-evidence m-0">
+        Nothing consumes this asset downstream — the damage stops here.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <p className="prose-evidence m-0">
+        {blast.count} downstream asset{blast.count === 1 ? "" : "s"} inherit this
+        data.{" "}
+        {blast.silent_count > 0 && (
+          <>
+            <span className="text-oxide">
+              {blast.silent_count} {blast.silent_count === 1 ? "is" : "are"} wrong
+              without alerting
+            </span>{" "}
+            — nobody is currently being told.
+          </>
+        )}
+      </p>
+      <ul className="m-0 list-none space-y-0 p-0">
+        {blast.impacted.map((asset) => (
+          <li
+            key={asset.urn}
+            className="rule flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2"
+          >
+            <span
+              className={`text-[13px] font-medium ${
+                asset.is_alerting ? "text-bone-dim" : "text-oxide"
+              }`}
+            >
+              {asset.name}
+            </span>
+            <span className="label">
+              {asset.kind} · {asset.hops_from_symptom} hop
+              {asset.hops_from_symptom === 1 ? "" : "s"} downstream
+            </span>
+            {asset.owner && (
+              <span className="text-[11px] text-muted">{asset.owner}</span>
+            )}
+            <span className="ml-auto shrink-0">
+              {asset.is_alerting ? (
+                <span className="label text-amber">alerting</span>
+              ) : (
+                <span className="label text-oxide">silent</span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** The check that would have caught this at the source. */
+export function AssertionPanel({
+  proposal,
+}: {
+  proposal: ProposedAssertion;
+}) {
+  return (
+    <div className="space-y-3">
+      <p className="m-0 flex flex-wrap items-baseline gap-x-3">
+        <span className="text-[13px] font-semibold text-jade">
+          {ASSERTION_KIND_LABELS[proposal.kind]} on {proposal.target_name}
+        </span>
+        {proposal.lead_time && (
+          <span className="label text-amber">{proposal.lead_time}</span>
+        )}
+      </p>
+      <p className="prose-evidence m-0">
+        <Prose text={proposal.description} />
+      </p>
+      <p className="prose-evidence m-0 text-muted">
+        <Prose text={proposal.rationale} />
+      </p>
+      <pre className="well m-0 overflow-x-auto p-3 text-[12.5px] leading-relaxed text-bone-dim">
+        {proposal.definition}
+      </pre>
+    </div>
+  );
+}
+
+const TIMELINE_TONE: Record<TimelineEvent["kind"], string> = {
+  fault_origin: "border-jade bg-jade",
+  transform_ran: "border-line-bright bg-line-bright",
+  assertion_fired: "border-amber bg-amber",
+  detected: "border-amber bg-amber",
+};
+
+/** The fault ordered in time rather than topology. */
+export function TimelinePanel({ events }: { events: TimelineEvent[] }) {
+  return (
+    <ol className="m-0 list-none space-y-0 p-0">
+      {events.map((event, i) => (
+        <li key={i} className="relative flex gap-4 pb-4 last:pb-0">
+          {i < events.length - 1 && (
+            <span
+              aria-hidden
+              className="absolute left-[5px] top-4 h-full w-px bg-line"
+            />
+          )}
+          <span
+            aria-hidden
+            className={`relative z-10 mt-[6px] h-[11px] w-[11px] shrink-0 rounded-full border ${TIMELINE_TONE[event.kind]}`}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="m-0 flex flex-wrap items-baseline gap-x-3">
+              <span className="text-[12px] text-bone tabular-nums">{event.at}</span>
+              <span className="label">{event.asset_name}</span>
+            </p>
+            <p className="prose-evidence m-0 mt-0.5 text-[14px]">{event.label}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
