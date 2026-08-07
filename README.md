@@ -91,6 +91,36 @@ ingestion job, the recommendation stops being "backfill this window" and becomes
   It receives nothing ungrounded, cannot reach any decision field, and its output
   is discarded if it invents a URN.
 
+## Two catalogs, one agent
+
+The app ships a switch, because the strongest evidence that the reasoning is real
+is watching it run on data nobody authored.
+
+**Demo catalog** — three planted faults, deterministic, and the one that carries
+the ungroundable decoy. This is what the tests and the recorded replay run
+against.
+
+**Live public catalog** — real assets and real freshness read from
+[NYC Open Data](https://data.cityofnewyork.us) on every refresh, so the open
+incident list is whatever is genuinely past its update SLA right now. It is not a
+fixed set of three; it changes as the city publishes.
+
+Being exact about which half is real, since that is the whole argument:
+
+| | Live catalog |
+| --- | --- |
+| Assets, names, columns | real, fetched from Socrata |
+| Freshness | real — `updatedAt` recomputed against the clock each refresh |
+| Lineage | **declared by this project.** Socrata publishes none; this is what every DataHub ingestion connector asserts, but it is ours and the UI says so |
+| Transform SQL | unavailable — no query history exists, so findings land on `PATH_ONLY` rather than claiming more |
+| Write-back | unavailable — read-only source, so the UI hides the toggle instead of offering one that does nothing |
+
+The declared edges are not arbitrary: TLC trip datasets reference the Taxi Zone
+lookup for `PULocationID` / `DOLocationID`. Datasets with no such dependency are
+declared with none — which is what lets the proof gate do real work here. A
+genuinely 2.6-year-stale dataset ranks near the top and is still not blamed on
+anything, because nothing connects it to a symptom.
+
 ## Beyond the cause
 
 Naming the culprit is where most tools stop. It is not where the on-call
@@ -221,7 +251,7 @@ Two robustness details worth noting, both handled by `MCPDataHubClient`:
 
 | Env var | Default | Meaning |
 | --- | --- | --- |
-| `CAUZON_DATAHUB_BACKEND` | `mock` | `mock` (planted faults) or `mcp` (real DataHub) |
+| `CAUZON_DATAHUB_BACKEND` | `mock` | `mock` (planted faults), `live` (NYC Open Data), or `mcp` (real DataHub) |
 | `CAUZON_MOCK_SCENARIO` | `freshness` | `freshness`, `schema_change`, or `fanout` |
 | `DATAHUB_GMS_URL` | `http://localhost:8080` | GMS endpoint (`mcp` backend) |
 | `DATAHUB_TOKEN` | — | DataHub personal access token (`mcp` backend) |
@@ -229,6 +259,7 @@ Two robustness details worth noting, both handled by `MCPDataHubClient`:
 | `CAUZON_LLM_NARRATION` | off | Set to `1` to let Claude write the dossier narrative |
 | `CAUZON_LLM_MODEL` | `claude-opus-5` | Model for the narration layer |
 | `NEXT_PUBLIC_CAUZON_API` | `http://localhost:8000` | Backend the frontend talks to |
+| `NEXT_PUBLIC_CAUZON_API_LIVE` | — | Second backend for the live catalog. Omit and the switcher is not rendered |
 
 Narration is **opt-in** and needs `pip install -e ".[llm]"` plus an
 `ANTHROPIC_API_KEY`. Without it — the default — Cauzon uses deterministic
@@ -238,7 +269,7 @@ templates, so tests are hermetic and a demo cannot fail on a network call.
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 80 tests
+pytest -q          # 101 tests
 ```
 
 The suite is deliberately adversarial about the central claim: a hostile narrator

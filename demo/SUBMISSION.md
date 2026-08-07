@@ -106,6 +106,18 @@ deterministic templates.
 
 ## Data used
 
+Three backends behind one interface, and the app lets you switch between the
+first two so you can watch the same agent reason over data it did not author.
+
+**Live public catalog.** Real assets and real freshness read from NYC Open Data
+(Socrata) on every refresh — the open-incident list is whatever is genuinely past
+its update SLA right now, not a fixed set. Two honest consequences follow, and
+both make the design earn its keep on real data: Socrata retains no query history,
+so findings land on `PATH_ONLY` rather than claiming a transform; and it is
+read-only, so write-back is declined instead of faked. Lineage is declared by this
+project, because Socrata publishes none — that is what every DataHub ingestion
+connector asserts, and the UI says plainly that it is ours.
+
 Two backends behind one interface. The **mock** backend ships three planted
 scenarios and needs no infrastructure, which is what the deployed demo and the
 test suite run against. The **MCP** backend talks to a real DataHub instance;

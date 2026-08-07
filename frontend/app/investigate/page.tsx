@@ -20,7 +20,11 @@ import {
   WritebackPanel,
 } from "@/components/panels";
 import { buildSpine } from "@/lib/spine";
-import { useInvestigation } from "@/lib/useInvestigation";
+import {
+  LIVE_CATALOG_AVAILABLE,
+  useInvestigation,
+  type Catalog,
+} from "@/lib/useInvestigation";
 import {
   datahubAssetUrl,
   type Health,
@@ -31,6 +35,8 @@ import {
 export default function InvestigatePage() {
   const {
     source,
+    catalog,
+    setCatalog,
     health,
     writeBack,
     setWriteBack,
@@ -52,6 +58,10 @@ export default function InvestigatePage() {
       <Header source={source} health={health} />
 
       <main id="main" className="space-y-4">
+        {LIVE_CATALOG_AVAILABLE && (
+          <CatalogSwitch value={catalog} onChange={setCatalog} />
+        )}
+
         {health?.live_source && <LiveSourceNote source={health.live_source} />}
 
         {/* ---- incident queue -------------------------------------------- */}
@@ -338,6 +348,55 @@ function Header({
         <span className="label">{label}</span>
       </div>
     </header>
+  );
+}
+
+/**
+ * Flip between the planted graph and a real public catalog.
+ *
+ * Same agent behind both. The demo graph is deterministic and carries the
+ * ungroundable decoy; the live one has real freshness and a queue that changes
+ * on its own. Seeing the identical reasoning on both is more convincing than
+ * either alone.
+ */
+function CatalogSwitch({
+  value,
+  onChange,
+}: {
+  value: Catalog;
+  onChange: (next: Catalog) => void;
+}) {
+  const options: { id: Catalog; label: string; hint: string }[] = [
+    { id: "demo", label: "Demo catalog", hint: "Three planted faults, deterministic" },
+    { id: "live", label: "Live public catalog", hint: "NYC Open Data, real freshness" },
+  ];
+  return (
+    <div role="group" aria-label="Catalog" className="flex flex-wrap gap-2">
+      {options.map((option) => {
+        const active = value === option.id;
+        return (
+          <button
+            key={option.id}
+            onClick={() => onChange(option.id)}
+            aria-pressed={active}
+            className={`flex-1 border px-4 py-3 text-left transition-colors ${
+              active
+                ? "border-jade-dim bg-jade-dim/25"
+                : "border-line hover:border-line-bright"
+            }`}
+          >
+            <span
+              className={`block text-[12px] font-semibold tracking-[0.1em] uppercase ${
+                active ? "text-jade" : "text-bone-dim"
+              }`}
+            >
+              {option.label}
+            </span>
+            <span className="mt-1 block text-[11px] text-muted">{option.hint}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

@@ -5,7 +5,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { mockIncidents, replayInvestigation } from "./mockInvestigation";
 import type { Diagnosis, Health, Incident, TraceEvent } from "./types";
 
-const API = process.env.NEXT_PUBLIC_CAUZON_API ?? "http://localhost:8000";
+/**
+ * Two backends, both optional.
+ *
+ * `demo` runs the planted three-fault graph — deterministic, always available,
+ * and the one that carries the decoy. `live` reads a real public catalog, where
+ * the incident list is whatever is genuinely stale. Same agent behind both;
+ * letting a reader flip between them is the point.
+ */
+export type Catalog = "demo" | "live";
+
+const API_DEMO = process.env.NEXT_PUBLIC_CAUZON_API ?? "http://localhost:8000";
+const API_LIVE = process.env.NEXT_PUBLIC_CAUZON_API_LIVE ?? "";
+
+export const LIVE_CATALOG_AVAILABLE = Boolean(API_LIVE);
+
+function baseFor(catalog: Catalog): string {
+  return catalog === "live" && API_LIVE ? API_LIVE : API_DEMO;
+}
 
 /**
  * `live` talks to the FastAPI backend (and therefore, optionally, a real
@@ -16,6 +33,9 @@ export type Source = "probing" | "live" | "replay";
 
 export interface InvestigationState {
   source: Source;
+  catalog: Catalog;
+  /** Switching re-probes the other backend and resets any in-flight run. */
+  setCatalog: (catalog: Catalog) => void;
   /** Non-null in live mode: what the backend says it is connected to. */
   health: Health | null;
   writeBack: boolean;
@@ -30,6 +50,7 @@ export interface InvestigationState {
 }
 
 export function useInvestigation(): InvestigationState {
+  const [catalog, setCatalogState] = useState<Catalog>("demo");
   const [source, setSource] = useState<Source>("probing");
   const [health, setHealth] = useState<Health | null>(null);
   const [writeBack, setWriteBack] = useState(true);
@@ -52,6 +73,7 @@ export function useInvestigation(): InvestigationState {
   // upgrades replay -> live if the backend answers late.
   useEffect(() => {
     let cancelled = false;
+    const API = baseFor(catalog);
 
     const load = async (timeoutMs: number): Promise<Health | null> => {
       const controller = new AbortController();
@@ -111,7 +133,7 @@ export function useInvestigation(): InvestigationState {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [catalog]);
 
   const teardown = useCallback(() => {
     cancelRef.current?.();
@@ -152,6 +174,7 @@ export function useInvestigation(): InvestigationState {
       return;
     }
 
+    const API = baseFor(catalog);
     const body = JSON.stringify({ ...selected, write_back: writeBack });
 
     const viaPost = () => {
@@ -203,10 +226,30 @@ export function useInvestigation(): InvestigationState {
     } catch {
       viaPost();
     }
-  }, [selected, source, teardown, writeBack]);
+  }, [catalog, selected, source, teardown, writeBack]);
+
+  const setCatalog = useCallback(
+    (next: Catalog) => {
+      if (next === catalog) return;
+      teardown();
+      setCatalogState(next);
+      // Reset everything: results from one catalog must never be shown under
+      // the other's label.
+      setSource("probing");
+      setHealth(null);
+      setIncidents([]);
+      setSelected(null);
+      setTrace([]);
+      setDiagnosis(null);
+      setRunning(false);
+    },
+    [catalog, teardown],
+  );
 
   return {
     source,
+    catalog,
+    setCatalog,
     health,
     writeBack,
     setWriteBack,

@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "build:cf": "NEXT_PUBLIC_BASE_PATH= next build",
+    "build:cf": "NEXT_PUBLIC_BASE_PATH= NEXT_PUBLIC_CAUZON_API=${NEXT_PUBLIC_CAUZON_API:-https://cauzon-api-712918182816.us-central1.run.app} NEXT_PUBLIC_CAUZON_API_LIVE=${NEXT_PUBLIC_CAUZON_API_LIVE:-https://cauzon-api-live-712918182816.us-central1.run.app} next build",
     "deploy:cf": "npm run build:cf && npx --yes wrangler pages deploy out --project-name=cauzon --branch=main --commit-dirty=true"
   },
   "dependencies": {

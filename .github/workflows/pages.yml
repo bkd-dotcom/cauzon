@@ -37,6 +37,9 @@ jobs:
           # The deployed backend. If it is ever removed, the app still works —
           # it falls back to replaying recorded agent output.
           NEXT_PUBLIC_CAUZON_API: ${{ vars.CAUZON_API_URL || 'https://cauzon-api-712918182816.us-central1.run.app' }}
+          # Second backend, reading a real public catalog. Optional: without it
+          # the catalog switcher is simply not rendered.
+          NEXT_PUBLIC_CAUZON_API_LIVE: ${{ vars.CAUZON_API_LIVE_URL || 'https://cauzon-api-live-712918182816.us-central1.run.app' }}
         run: |
           npm ci
           npm run build
