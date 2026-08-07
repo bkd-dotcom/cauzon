@@ -22,16 +22,21 @@ from typing import Any, Callable, Iterable, Optional
 
 from .datahub_client import DataHubClient, get_client
 from .models import (
+    BlastRadius,
     CandidateCause,
+    ColumnPath,
     ConfidenceBreakdown,
     Diagnosis,
     GroundingLevel,
+    ImpactedAsset,
     Incident,
     PriorIncident,
     ProofPath,
+    ProposedAssertion,
     Recurrence,
     RecommendedFix,
     Signal,
+    TimelineEvent,
     TraceEvent,
 )
 
@@ -52,6 +57,111 @@ _INHERITED_PENALTY = 0.6
 
 # Volume swing (percent) that counts as anomalous.
 _VOLUME_ANOMALY_PCT = 20.0
+
+# Platforms whose assets are consumed by people rather than by other pipelines.
+# A wrong dashboard is worse than a wrong intermediate table: someone is reading
+# it and acting on it.
+_BI_PLATFORMS = {"looker", "tableau", "powerbi", "mode", "superset", "metabase"}
+
+
+def _short(urn: str) -> str:
+    """Readable asset name from a DataHub URN."""
+    if "," not in urn:
+        return urn
+    qualified = urn.split(",")[1]
+    return qualified.split(".")[-1]
+
+
+def _asset_kind(urn: str) -> str:
+    platform = urn.split("dataPlatform:")[-1].split(",")[0] if "dataPlatform:" in urn else ""
+    return "dashboard" if platform in _BI_PLATFORMS else "dataset"
+
+
+def _lead_time(cause: CandidateCause) -> Optional[str]:
+    """How much earlier a check on the origin would have fired.
+
+    Derived from the staleness itself: if the asset is 51h old against a 24h SLA,
+    a freshness check would have fired 27h before anyone noticed downstream.
+    """
+    note = next((n for n in cause.evidence_notes if "SLA" in n), None)
+    if not note or "+" not in note:
+        return None
+    tail = note.split("+", 1)[1]
+    amount = tail.split("h", 1)[0]
+    try:
+        float(amount)
+    except ValueError:
+        return None
+    return f"~{amount}h earlier than the downstream alert"
+
+
+# Per-signal assertion templates: (kind, describe, define). Definitions are
+# concrete enough to paste into a DataHub assertion or a dbt test.
+_ASSERTION_BY_SIGNAL: dict[Signal, tuple[str, Any, Any]] = {
+    Signal.FRESHNESS_LAG: (
+        "freshness",
+        lambda c: f"`{c.name}` must receive new data at least every 24 hours.",
+        lambda c: (
+            f"-- Freshness assertion on {c.name}\n"
+            f"SELECT MAX(_ingested_at) AS latest\n"
+            f"FROM {c.name}\n"
+            f"HAVING MAX(_ingested_at) > CURRENT_TIMESTAMP - INTERVAL '24 hours';"
+        ),
+    ),
+    Signal.SCHEMA_CHANGE: (
+        "schema_contract",
+        lambda c: (
+            f"`{c.name}` must not drop or rename a column that downstream "
+            f"consumers select."
+        ),
+        lambda c: (
+            f"-- Schema contract on {c.name}\n"
+            f"-- Fail the pipeline when a consumed column disappears.\n"
+            f"columns_required:\n"
+            f"  - name: {_renamed_from(c) or '<consumed_column>'}\n"
+            f"    on_missing: fail\n"
+            f"    consumers: [downstream transforms selecting this column]"
+        ),
+    ),
+    Signal.ROW_FANOUT: (
+        "uniqueness",
+        lambda c: f"`{c.name}`'s join key must stay unique.",
+        lambda c: (
+            f"-- Uniqueness assertion on {c.name}\n"
+            f"SELECT COUNT(*) AS duplicate_keys FROM (\n"
+            f"  SELECT {_dup_key(c) or '<join_key>'}\n"
+            f"  FROM {c.name}\n"
+            f"  GROUP BY 1 HAVING COUNT(*) > 1\n"
+            f") HAVING COUNT(*) = 0;"
+        ),
+    ),
+    Signal.VOLUME_ANOMALY: (
+        "volume",
+        lambda c: f"`{c.name}` row count must stay within 20% of its 7-day average.",
+        lambda c: (
+            f"-- Volume assertion on {c.name}\n"
+            f"SELECT COUNT(*) AS rows_today FROM {c.name}\n"
+            f"HAVING COUNT(*) BETWEEN 0.8 * :seven_day_avg AND 1.2 * :seven_day_avg;"
+        ),
+    ),
+}
+
+
+def _renamed_from(cause: CandidateCause) -> Optional[str]:
+    """The old column name, read from the note that produced the signal."""
+    note = next((n for n in cause.evidence_notes if "renamed" in n.lower()), None)
+    if not note or "`" not in note:
+        return None
+    parts = note.split("`")
+    return parts[1] if len(parts) > 1 else None
+
+
+def _dup_key(cause: CandidateCause) -> Optional[str]:
+    note = next((n for n in cause.evidence_notes if "duplicate" in n.lower()), None)
+    if not note or "`" not in note:
+        return None
+    parts = note.split("`")
+    return parts[1] if len(parts) > 1 else None
 
 
 class CauzonAgent:
@@ -109,6 +219,14 @@ class CauzonAgent:
         if root_cause:
             root_cause.owner = self._resolve_owner(root_cause.urn)
 
+        # 4d) The other direction. Upstream answers "what broke it"; downstream
+        # answers "what else is wrong that nobody has noticed yet".
+        blast = self._blast_radius(incident, emit)
+
+        # 4e) Diagnosing a repeat failure without proposing the missing guardrail
+        # leaves it free to happen again.
+        assertion = self._propose_assertion(root_cause, incident, recurrence, emit)
+
         grounding = proof.grounding if proof else GroundingLevel.UNGROUNDED
         breakdown = self._confidence(root_cause, grounding)
         diagnosis = Diagnosis(
@@ -121,6 +239,9 @@ class CauzonAgent:
             confidence_breakdown=breakdown,
             grounding=grounding,
             recurrence=recurrence,
+            blast_radius=blast,
+            proposed_assertion=assertion,
+            timeline=self._timeline(incident, root_cause, proof),
         )
 
         # Explanation runs last, over facts that are already settled. It cannot
@@ -160,7 +281,10 @@ class CauzonAgent:
             profiled[urn] = {"node": node, "signals": signals, "notes": notes}
 
         candidates: list[CandidateCause] = []
-        for urn, prof in profiled.items():
+        # Snapshot: _assess_origin profiles out-of-scope parents on demand, which
+        # inserts into `profiled`. Iterating the live dict raises as soon as a
+        # candidate has a parent beyond the scoped hop limit.
+        for urn, prof in list(profiled.items()):
             signals: list[Signal] = prof["signals"]
             notes: list[str] = list(prof["notes"])
             is_origin, origin_note = self._assess_origin(urn, signals, profiled)
@@ -336,20 +460,28 @@ class CauzonAgent:
                 if transform_sql
                 else GroundingLevel.PATH_ONLY
             )
+            nodes = path.get("nodes", [])
             proof = ProofPath(
                 symptom_urn=incident.urn,
                 cause_urn=cand.urn,
-                nodes=path.get("nodes", []),
+                nodes=nodes,
                 edges=edges,
                 transform_sql=transform_sql,
                 causal_edge_index=edge_index,
                 grounding=grounding,
+                column_path=self._column_path(nodes),
             )
             detail = (
                 "transform that carried the fault captured"
                 if transform_sql
                 else "no transform SQL retained for this edge"
             )
+            if proof.column_path:
+                detail += (
+                    f"; fault traced to the field "
+                    f"`{proof.column_path.cause_field}` -> "
+                    f"`{proof.column_path.symptom_field}`"
+                )
             emit(
                 "prove",
                 f"Verified path to {cand.name} across {len(edges)} lineage edge(s) — "
@@ -360,6 +492,44 @@ class CauzonAgent:
 
         emit("prove", "No candidate could be grounded with a verifiable path.")
         return None, None
+
+    def _column_path(self, nodes: list[str]) -> Optional[ColumnPath]:
+        """Follow the fault down to the field, when column lineage exists.
+
+        Naming the column is strictly stronger than naming the table. But most
+        catalogs have no column-level lineage, so this returns None rather than
+        guessing — the same discipline as the grounding ladder: report the rung
+        you actually reached.
+        """
+        if len(nodes) < 2:
+            return None
+
+        fields: list[str] = []
+        for urn in nodes:
+            try:
+                mapping = self.client.get_entity(urn).get("column_lineage") or {}
+            except Exception:
+                return None
+            if not mapping:
+                return None
+            # {downstream_field: upstream_field} on each hop; the first node
+            # states the field the fault originated in.
+            if not fields:
+                origin = mapping.get("__origin__")
+                if not origin:
+                    return None
+                fields.append(origin)
+                continue
+            inherited = mapping.get(fields[-1]) or mapping.get("__inherits__")
+            if not inherited:
+                return None
+            fields.append(inherited)
+
+        if len(fields) != len(nodes):
+            return None
+        return ColumnPath(
+            cause_field=fields[0], symptom_field=fields[-1], fields=fields
+        )
 
     @staticmethod
     def _causal_transform(
@@ -418,6 +588,179 @@ class CauzonAgent:
             return self.client.get_entity(urn).get("owner")
         except Exception:
             return None
+
+    # ------------------------------------------------------------------ #
+    # Phase 4d — blast radius
+    # ------------------------------------------------------------------ #
+    def _blast_radius(
+        self, incident: Incident, emit: Callable[..., None]
+    ) -> Optional[BlastRadius]:
+        """Everything downstream of the symptom that inherits the same bad data.
+
+        The asset that alerted is rarely the only one affected — it is just the
+        one that happened to have an assertion on it. Assets that are wrong and
+        *not* alerting are the dangerous ones, because someone is reading them
+        believing they are fine.
+        """
+        try:
+            downstream = self.client.get_lineage(
+                incident.urn, direction="downstream", hops=3
+            )
+        except Exception:
+            # Could not look. Distinct from looking and finding nothing.
+            return None
+
+        impacted: list[ImpactedAsset] = []
+        for node in downstream:
+            urn = node["urn"]
+            entity = {}
+            try:
+                entity = self.client.get_entity(urn)
+            except Exception:
+                pass
+            impacted.append(
+                ImpactedAsset(
+                    urn=urn,
+                    name=node.get("name") or entity.get("name") or urn,
+                    hops_from_symptom=node.get("hops", 1),
+                    kind=_asset_kind(urn),
+                    owner=entity.get("owner"),
+                    is_alerting=bool(entity.get("has_open_incident")),
+                )
+            )
+        impacted.sort(key=lambda a: a.hops_from_symptom)
+        blast = BlastRadius(symptom_urn=incident.urn, impacted=impacted)
+
+        if not blast.count:
+            emit(
+                "scope",
+                "Nothing consumes this asset downstream — the damage stops here.",
+                blast.to_dict(),
+            )
+            return blast
+
+        silent = len(blast.silent)
+        emit(
+            "scope",
+            f"{blast.count} downstream asset(s) inherit this data; {silent} "
+            f"{'is' if silent == 1 else 'are'} affected without alerting.",
+            blast.to_dict(),
+        )
+        return blast
+
+    # ------------------------------------------------------------------ #
+    # Phase 4e — propose the missing guardrail
+    # ------------------------------------------------------------------ #
+    def _propose_assertion(
+        self,
+        cause: Optional[CandidateCause],
+        incident: Incident,
+        recurrence: Optional[Recurrence],
+        emit: Callable[..., None],
+    ) -> Optional[ProposedAssertion]:
+        """The check that would have caught this at the source, not at the dashboard.
+
+        The incident fired on the symptom, which is the *last* place the fault
+        shows up. An assertion on the origin would have fired first — and for a
+        recurring failure, that gap is the actual defect.
+        """
+        if not cause or not cause.signals:
+            return None
+
+        spec = _ASSERTION_BY_SIGNAL.get(cause.signals[0])
+        if not spec:
+            return None
+        kind, describe, define = spec
+
+        rationale = (
+            f"The assertion that fired was on `{_short(incident.urn)}`, which is "
+            f"where the fault surfaced. This one sits on `{cause.name}`, where it "
+            f"started, so it fires before anything downstream is affected."
+        )
+        if recurrence and recurrence.is_recurring:
+            rationale += (
+                f" This asset has failed {recurrence.count} time(s) before with no "
+                f"check in place, which is why it keeps recurring."
+            )
+
+        proposal = ProposedAssertion(
+            target_urn=cause.urn,
+            target_name=cause.name,
+            kind=kind,
+            description=describe(cause),
+            definition=define(cause),
+            rationale=rationale,
+            lead_time=_lead_time(cause),
+        )
+        emit(
+            "hypothesize",
+            f"No {kind} assertion exists on `{cause.name}`. Proposing one — it would "
+            f"have caught this at the source.",
+            proposal.to_dict(),
+        )
+        return proposal
+
+    # ------------------------------------------------------------------ #
+    # Phase 4f — the fault in time, not topology
+    # ------------------------------------------------------------------ #
+    def _timeline(
+        self,
+        incident: Incident,
+        cause: Optional[CandidateCause],
+        proof: Optional[ProofPath],
+    ) -> list[TimelineEvent]:
+        """Order the propagation chronologically.
+
+        The graph shows where the fault travelled; this shows *when*, which is
+        what makes "downstream transforms ran on data that was already bad"
+        legible rather than inferred.
+        """
+        if not (cause and proof):
+            return []
+
+        events: list[TimelineEvent] = []
+        origin_at = self._entity_field(cause.urn, "fault_began_at")
+        if origin_at:
+            events.append(
+                TimelineEvent(
+                    at=origin_at,
+                    asset_name=cause.name,
+                    label=cause.evidence_notes[0] if cause.evidence_notes else "Fault began",
+                    kind="fault_origin",
+                )
+            )
+
+        # Each transform that ran after the fault began consumed bad data.
+        for urn in proof.nodes[1:]:
+            ran_at = self._entity_field(urn, "last_transform_at")
+            if not ran_at:
+                continue
+            events.append(
+                TimelineEvent(
+                    at=ran_at,
+                    asset_name=_short(urn),
+                    label="Transform ran on data that was already bad",
+                    kind="transform_ran",
+                )
+            )
+
+        if incident.detected_at:
+            events.append(
+                TimelineEvent(
+                    at=incident.detected_at,
+                    asset_name=_short(incident.urn),
+                    label=incident.failed_assertion or "Assertion failed",
+                    kind="assertion_fired",
+                )
+            )
+        return events
+
+    def _entity_field(self, urn: str, key: str) -> Optional[str]:
+        try:
+            value = self.client.get_entity(urn).get(key)
+        except Exception:
+            return None
+        return str(value) if value else None
 
     # ------------------------------------------------------------------ #
     # Scoring the result
@@ -642,7 +985,12 @@ class CauzonAgent:
             content=dossier,
             related_urns=[diagnosis.incident.urn, cause.urn],
         )
-        self.client.add_tags(cause.urn, ["root-cause", "cauzon-diagnosed"])
+        tags = ["root-cause", "cauzon-diagnosed"]
+        if diagnosis.proposed_assertion:
+            # Marks the asset as missing a guardrail, so it is findable by search
+            # rather than only readable inside this one dossier.
+            tags.append("needs-assertion")
+        self.client.add_tags(cause.urn, tags)
         self.client.update_description(
             cause.urn,
             f"⚠️ Cauzon identified this as the root cause of incident "
@@ -726,6 +1074,56 @@ class CauzonAgent:
                 "_DataHub retains no transform SQL for the causal edge, so this "
                 "dossier proves the path but not the transform._",
             ]
+
+        if proof.column_path:
+            cp = proof.column_path
+            lines += [
+                "",
+                "### Column-level proof",
+                f"The fault entered at `{cp.cause_field}` and surfaced as "
+                f"`{cp.symptom_field}`:",
+                "```",
+                " -> ".join(cp.fields),
+                "```",
+            ]
+
+        timeline = diagnosis.timeline
+        if timeline:
+            lines += ["", "### How it propagated", "", "| When | Asset | What happened |", "| --- | --- | --- |"]
+            lines += [f"| {e.at} | `{e.asset_name}` | {e.label} |" for e in timeline]
+
+        blast = diagnosis.blast_radius
+        if blast and blast.count:
+            silent = blast.silent
+            lines += [
+                "",
+                "### Blast radius",
+                f"{blast.count} downstream asset(s) inherit this data. "
+                f"{len(silent)} of them {'is' if len(silent) == 1 else 'are'} wrong "
+                f"without alerting, so nobody is currently looking:",
+                *[
+                    f"- **{a.name}** ({a.kind}, {a.hops_from_symptom} hop"
+                    f"{'' if a.hops_from_symptom == 1 else 's'} downstream)"
+                    + (f" — owner {a.owner}" if a.owner else "")
+                    + ("" if a.is_alerting else " — **not alerting**")
+                    for a in blast.impacted
+                ],
+            ]
+
+        proposal = diagnosis.proposed_assertion
+        if proposal:
+            lines += [
+                "",
+                "### Missing guardrail",
+                f"There is no {proposal.kind} assertion on `{proposal.target_name}`.",
+                "",
+                proposal.description,
+                "",
+                proposal.rationale,
+            ]
+            if proposal.lead_time:
+                lines.append(f"Estimated lead time: {proposal.lead_time}.")
+            lines += ["", "```sql", proposal.definition, "```"]
 
         rejected = [c for c in diagnosis.ranked_candidates if c.rejected_reason]
         if rejected:

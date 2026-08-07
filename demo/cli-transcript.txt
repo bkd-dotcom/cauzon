@@ -5,8 +5,10 @@
 [SCOPE      ] Pulled 3 upstream nodes within 3 hops.
 [HYPOTHESIZE] Ranked 3 candidates; 3 carry evidence. Top: marketing_spend
 [PROVE      ] Rejected marketing_spend (score 8.0): no lineage path to the symptom — cannot ground the claim.
-[PROVE      ] Verified path to raw_trips across 2 lineage edge(s) — transform that carried the fault captured.
+[PROVE      ] Verified path to raw_trips across 2 lineage edge(s) — transform that carried the fault captured; fault traced to the field `fare_amount` -> `revenue`.
 [HYPOTHESIZE] raw_trips has 2 prior Cauzon dossier(s) — this is a recurring failure, not a one-off.
+[SCOPE      ] 3 downstream asset(s) inherit this data; 3 are affected without alerting.
+[HYPOTHESIZE] No freshness assertion exists on `raw_trips`. Proposing one — it would have caught this at the source.
 
 ============================================================
 ✅ ROOT CAUSE: raw_trips   [Path + transform proven]
@@ -16,6 +18,20 @@
    Proof path: nyc.raw_trips -> nyc.trips_cleaned -> nyc.daily_revenue
    Rejected by proof gate: marketing_spend (score 8.0)
    Recurrence: 2 prior dossier(s)
+   Column path: fare_amount -> fare_amount -> revenue
+   Blast radius: 3 downstream, 3 not alerting
+     - revenue_dashboard (dashboard)  <- nobody watching
+     - exec_weekly_summary (dashboard)  <- nobody watching
+     - driver_payouts (dataset)  <- nobody watching
+
+   How it propagated:
+     Aug 5, 06:11           raw_trips              Freshness 51h exceeds the 24h SLA (+27h stale).
+     Aug 6, 07:00           trips_cleaned          Transform ran on data that was already bad
+     today 07:12            daily_revenue          Transform ran on data that was already bad
+     today 08:04            daily_revenue          row_count within 10% of 7-day average
+
+   Missing guardrail: no freshness assertion on `raw_trips`
+     Would have fired ~27h earlier than the downstream alert
 
    Recommended fix: Restart the ingestion job feeding `raw_trips` and backfill the missing window; it is the upstream origin of the staleness. Owner: data-platform@example.com. This is failure #3 for this asset — treat the schedule or contract as the real defect, not just this occurrence.
    ---
@@ -31,7 +47,9 @@
 [DETECT     ] Picked up incident: weekly_sales revenue is reporting $0 for all weeks
 [SCOPE      ] Pulled 2 upstream nodes within 3 hops.
 [HYPOTHESIZE] Ranked 2 candidates; 1 carry evidence. Top: raw_orders
-[PROVE      ] Verified path to raw_orders across 2 lineage edge(s) — transform that carried the fault captured.
+[PROVE      ] Verified path to raw_orders across 2 lineage edge(s) — transform that carried the fault captured; fault traced to the field `amount` -> `revenue`.
+[SCOPE      ] 1 downstream asset(s) inherit this data; 1 is affected without alerting.
+[HYPOTHESIZE] No schema_contract assertion exists on `raw_orders`. Proposing one — it would have caught this at the source.
 
 ============================================================
 ✅ ROOT CAUSE: raw_orders   [Path + transform proven]
@@ -39,6 +57,17 @@
      = grounding ×1.0 · signals ×0.7 · origin ×1.0
    Owner: commerce-platform@example.com
    Proof path: shop.raw_orders -> shop.orders_enriched -> shop.weekly_sales
+   Column path: amount -> revenue -> revenue
+   Blast radius: 1 downstream, 1 not alerting
+     - sales_dashboard (dashboard)  <- nobody watching
+
+   How it propagated:
+     today 03:40            raw_orders             Column `amount` renamed to `order_amount` 6 hours ago.
+     today 06:55            orders_enriched        Transform ran on data that was already bad
+     today 08:10            weekly_sales           Transform ran on data that was already bad
+     today 09:12            weekly_sales           weekly_sales.revenue must be > 0
+
+   Missing guardrail: no schema_contract assertion on `raw_orders`
 
    Recommended fix: Reconcile the schema change on `raw_orders` with its downstream consumers, then add a schema contract so the next rename fails loudly. Owner: commerce-platform@example.com.
    ---
@@ -51,7 +80,9 @@
 [DETECT     ] Picked up incident: session_metrics session counts tripled overnight
 [SCOPE      ] Pulled 3 upstream nodes within 3 hops.
 [HYPOTHESIZE] Ranked 3 candidates; 2 carry evidence. Top: user_dim
-[PROVE      ] Verified path to user_dim across 2 lineage edge(s) — transform that carried the fault captured.
+[PROVE      ] Verified path to user_dim across 2 lineage edge(s) — transform that carried the fault captured; fault traced to the field `user_id` -> `sessions`.
+[SCOPE      ] 1 downstream asset(s) inherit this data; 1 is affected without alerting.
+[HYPOTHESIZE] No uniqueness assertion exists on `user_dim`. Proposing one — it would have caught this at the source.
 
 ============================================================
 ✅ ROOT CAUSE: user_dim   [Path + transform proven]
@@ -59,6 +90,17 @@
      = grounding ×1.0 · signals ×0.7 · origin ×1.0
    Owner: identity-team@example.com
    Proof path: app.user_dim -> app.sessions_joined -> app.session_metrics
+   Column path: user_id -> user_id -> sessions
+   Blast radius: 1 downstream, 1 not alerting
+     - engagement_dashboard (dashboard)  <- nobody watching
+
+   How it propagated:
+     yesterday 23:40        user_dim               1,240 duplicate `user_id` values (3.1% of rows); the primary key is no longer unique after last night's reload.
+     today 05:20            sessions_joined        Transform ran on data that was already bad
+     today 06:35            session_metrics        Transform ran on data that was already bad
+     today 07:41            session_metrics        session_metrics.sessions within 25% of 7-day average
+
+   Missing guardrail: no uniqueness assertion on `user_dim`
 
    Recommended fix: De-duplicate `user_dim` and restore its key uniqueness — the duplicate keys are fanning out every downstream join. Owner: identity-team@example.com.
    ---

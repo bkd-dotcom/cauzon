@@ -31,6 +31,41 @@ shop.raw_orders -> shop.orders_enriched -> shop.weekly_sales
 SELECT order_id, customer_id, amount AS revenue, created_at FROM raw_orders
 ```
 
+### Column-level proof
+The fault entered at `amount` and surfaced as `revenue`:
+```
+amount -> revenue -> revenue
+```
+
+### How it propagated
+
+| When | Asset | What happened |
+| --- | --- | --- |
+| today 03:40 | `raw_orders` | Column `amount` renamed to `order_amount` 6 hours ago. |
+| today 06:55 | `orders_enriched` | Transform ran on data that was already bad |
+| today 08:10 | `weekly_sales` | Transform ran on data that was already bad |
+| today 09:12 | `weekly_sales` | weekly_sales.revenue must be > 0 |
+
+### Blast radius
+1 downstream asset(s) inherit this data. 1 of them is wrong without alerting, so nobody is currently looking:
+- **sales_dashboard** (dashboard, 1 hop downstream) — owner revenue-analytics@example.com — **not alerting**
+
+### Missing guardrail
+There is no schema_contract assertion on `raw_orders`.
+
+`raw_orders` must not drop or rename a column that downstream consumers select.
+
+The assertion that fired was on `weekly_sales`, which is where the fault surfaced. This one sits on `raw_orders`, where it started, so it fires before anything downstream is affected.
+
+```sql
+-- Schema contract on raw_orders
+-- Fail the pipeline when a consumed column disappears.
+columns_required:
+  - name: amount
+    on_missing: fail
+    consumers: [downstream transforms selecting this column]
+```
+
 ## Recommended fix
 Reconcile the schema change on `raw_orders` with its downstream consumers, then add a schema contract so the next rename fails loudly. Owner: commerce-platform@example.com.
 

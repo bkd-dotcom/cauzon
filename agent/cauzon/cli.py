@@ -77,6 +77,34 @@ def main() -> None:
         if diagnosis.recurrence and diagnosis.recurrence.is_recurring:
             print(f"   Recurrence: {diagnosis.recurrence.count} prior dossier(s)")
 
+        if diagnosis.proof_path and diagnosis.proof_path.column_path:
+            cp = diagnosis.proof_path.column_path
+            print(f"   Column path: {' -> '.join(cp.fields)}")
+
+        blast = diagnosis.blast_radius
+        if blast and blast.count:
+            silent = len(blast.silent)
+            print(
+                f"   Blast radius: {blast.count} downstream, {silent} not alerting"
+            )
+            for asset in blast.impacted:
+                flag = "" if asset.is_alerting else "  <- nobody watching"
+                print(f"     - {asset.name} ({asset.kind}){flag}")
+
+        if diagnosis.timeline:
+            print("\n   How it propagated:")
+            for e in diagnosis.timeline:
+                print(f"     {e.at:22} {e.asset_name:22} {e.label}")
+
+        proposal = diagnosis.proposed_assertion
+        if proposal:
+            print(
+                f"\n   Missing guardrail: no {proposal.kind} assertion on "
+                f"`{proposal.target_name}`"
+            )
+            if proposal.lead_time:
+                print(f"     Would have fired {proposal.lead_time}")
+
         fix = diagnosis.recommended_fix
         if fix:
             print(f"\n   Recommended fix: {fix.summary}")

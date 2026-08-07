@@ -31,6 +31,41 @@ app.user_dim -> app.sessions_joined -> app.session_metrics
 CREATE OR REPLACE TABLE sessions_joined AS SELECT e.session_id, e.duration_s, u.plan FROM raw_events e JOIN user_dim u ON e.user_id = u.user_id
 ```
 
+### Column-level proof
+The fault entered at `user_id` and surfaced as `sessions`:
+```
+user_id -> user_id -> sessions
+```
+
+### How it propagated
+
+| When | Asset | What happened |
+| --- | --- | --- |
+| yesterday 23:40 | `user_dim` | 1,240 duplicate `user_id` values (3.1% of rows); the primary key is no longer unique after last night's reload. |
+| today 05:20 | `sessions_joined` | Transform ran on data that was already bad |
+| today 06:35 | `session_metrics` | Transform ran on data that was already bad |
+| today 07:41 | `session_metrics` | session_metrics.sessions within 25% of 7-day average |
+
+### Blast radius
+1 downstream asset(s) inherit this data. 1 of them is wrong without alerting, so nobody is currently looking:
+- **engagement_dashboard** (dashboard, 1 hop downstream) — owner product-analytics@example.com — **not alerting**
+
+### Missing guardrail
+There is no uniqueness assertion on `user_dim`.
+
+`user_dim`'s join key must stay unique.
+
+The assertion that fired was on `session_metrics`, which is where the fault surfaced. This one sits on `user_dim`, where it started, so it fires before anything downstream is affected.
+
+```sql
+-- Uniqueness assertion on user_dim
+SELECT COUNT(*) AS duplicate_keys FROM (
+  SELECT user_id
+  FROM user_dim
+  GROUP BY 1 HAVING COUNT(*) > 1
+) HAVING COUNT(*) = 0;
+```
+
 ## Recommended fix
 De-duplicate `user_dim` and restore its key uniqueness — the duplicate keys are fanning out every downstream join. Owner: identity-team@example.com.
 

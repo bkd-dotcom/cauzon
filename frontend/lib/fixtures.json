@@ -57,7 +57,16 @@
         "causal_edge_index": 0,
         "grounding": "path_and_transform",
         "grounding_label": "Path + transform proven",
-        "verified": true
+        "verified": true,
+        "column_path": {
+          "cause_field": "fare_amount",
+          "symptom_field": "revenue",
+          "fields": [
+            "fare_amount",
+            "fare_amount",
+            "revenue"
+          ]
+        }
       },
       "ranked_candidates": [
         {
@@ -151,6 +160,72 @@
         "count": 2,
         "is_recurring": true
       },
+      "blast_radius": {
+        "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)",
+        "impacted": [
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,nyc.revenue_dashboard,PROD)",
+            "name": "revenue_dashboard",
+            "hops_from_symptom": 1,
+            "kind": "dashboard",
+            "owner": "exec-reporting@example.com",
+            "is_alerting": false
+          },
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,nyc.exec_weekly_summary,PROD)",
+            "name": "exec_weekly_summary",
+            "hops_from_symptom": 1,
+            "kind": "dashboard",
+            "owner": "exec-reporting@example.com",
+            "is_alerting": false
+          },
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.driver_payouts,PROD)",
+            "name": "driver_payouts",
+            "hops_from_symptom": 1,
+            "kind": "dataset",
+            "owner": "finance-eng@example.com",
+            "is_alerting": false
+          }
+        ],
+        "count": 3,
+        "silent_count": 3
+      },
+      "proposed_assertion": {
+        "target_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+        "target_name": "raw_trips",
+        "kind": "freshness",
+        "description": "`raw_trips` must receive new data at least every 24 hours.",
+        "definition": "-- Freshness assertion on raw_trips\nSELECT MAX(_ingested_at) AS latest\nFROM raw_trips\nHAVING MAX(_ingested_at) > CURRENT_TIMESTAMP - INTERVAL '24 hours';",
+        "rationale": "The assertion that fired was on `daily_revenue`, which is where the fault surfaced. This one sits on `raw_trips`, where it started, so it fires before anything downstream is affected. This asset has failed 2 time(s) before with no check in place, which is why it keeps recurring.",
+        "lead_time": "~27h earlier than the downstream alert"
+      },
+      "timeline": [
+        {
+          "at": "Aug 5, 06:11",
+          "asset_name": "raw_trips",
+          "label": "Freshness 51h exceeds the 24h SLA (+27h stale).",
+          "kind": "fault_origin"
+        },
+        {
+          "at": "Aug 6, 07:00",
+          "asset_name": "trips_cleaned",
+          "label": "Transform ran on data that was already bad",
+          "kind": "transform_ran"
+        },
+        {
+          "at": "today 07:12",
+          "asset_name": "daily_revenue",
+          "label": "Transform ran on data that was already bad",
+          "kind": "transform_ran"
+        },
+        {
+          "at": "today 08:04",
+          "asset_name": "daily_revenue",
+          "label": "row_count within 10% of 7-day average",
+          "kind": "assertion_fired"
+        }
+      ],
       "narrative": "`raw_trips` is the origin of this incident, and the fault reached the symptom along nyc.raw_trips \u2192 nyc.trips_cleaned \u2192 nyc.daily_revenue. Path + transform proven at 85% confidence. Evidence: Freshness 51h exceeds the 24h SLA (+27h stale). `marketing_spend` scored higher on signals alone but was rejected: No lineage path connects this asset to the symptom, so the claim cannot be grounded. This asset has failed 2 time(s) before.",
       "narrative_source": "template",
       "trace": [
@@ -261,7 +336,7 @@
         },
         {
           "phase": "prove",
-          "message": "Verified path to raw_trips across 2 lineage edge(s) \u2014 transform that carried the fault captured.",
+          "message": "Verified path to raw_trips across 2 lineage edge(s) \u2014 transform that carried the fault captured; fault traced to the field `fare_amount` -> `revenue`.",
           "data": {
             "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)",
             "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
@@ -286,7 +361,16 @@
             "causal_edge_index": 0,
             "grounding": "path_and_transform",
             "grounding_label": "Path + transform proven",
-            "verified": true
+            "verified": true,
+            "column_path": {
+              "cause_field": "fare_amount",
+              "symptom_field": "revenue",
+              "fields": [
+                "fare_amount",
+                "fare_amount",
+                "revenue"
+              ]
+            }
           }
         },
         {
@@ -308,6 +392,54 @@
             ],
             "count": 2,
             "is_recurring": true
+          }
+        },
+        {
+          "phase": "scope",
+          "message": "3 downstream asset(s) inherit this data; 3 are affected without alerting.",
+          "data": {
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)",
+            "impacted": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,nyc.revenue_dashboard,PROD)",
+                "name": "revenue_dashboard",
+                "hops_from_symptom": 1,
+                "kind": "dashboard",
+                "owner": "exec-reporting@example.com",
+                "is_alerting": false
+              },
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,nyc.exec_weekly_summary,PROD)",
+                "name": "exec_weekly_summary",
+                "hops_from_symptom": 1,
+                "kind": "dashboard",
+                "owner": "exec-reporting@example.com",
+                "is_alerting": false
+              },
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.driver_payouts,PROD)",
+                "name": "driver_payouts",
+                "hops_from_symptom": 1,
+                "kind": "dataset",
+                "owner": "finance-eng@example.com",
+                "is_alerting": false
+              }
+            ],
+            "count": 3,
+            "silent_count": 3
+          }
+        },
+        {
+          "phase": "hypothesize",
+          "message": "No freshness assertion exists on `raw_trips`. Proposing one \u2014 it would have caught this at the source.",
+          "data": {
+            "target_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
+            "target_name": "raw_trips",
+            "kind": "freshness",
+            "description": "`raw_trips` must receive new data at least every 24 hours.",
+            "definition": "-- Freshness assertion on raw_trips\nSELECT MAX(_ingested_at) AS latest\nFROM raw_trips\nHAVING MAX(_ingested_at) > CURRENT_TIMESTAMP - INTERVAL '24 hours';",
+            "rationale": "The assertion that fired was on `daily_revenue`, which is where the fault surfaced. This one sits on `raw_trips`, where it started, so it fires before anything downstream is affected. This asset has failed 2 time(s) before with no check in place, which is why it keeps recurring.",
+            "lead_time": "~27h earlier than the downstream alert"
           }
         },
         {
@@ -334,7 +466,8 @@
           "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
           "tags": [
             "root-cause",
-            "cauzon-diagnosed"
+            "cauzon-diagnosed",
+            "needs-assertion"
           ]
         },
         {
@@ -401,7 +534,16 @@
         "causal_edge_index": 0,
         "grounding": "path_and_transform",
         "grounding_label": "Path + transform proven",
-        "verified": true
+        "verified": true,
+        "column_path": {
+          "cause_field": "amount",
+          "symptom_field": "revenue",
+          "fields": [
+            "amount",
+            "revenue",
+            "revenue"
+          ]
+        }
       },
       "ranked_candidates": [
         {
@@ -457,6 +599,56 @@
         "count": 0,
         "is_recurring": false
       },
+      "blast_radius": {
+        "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)",
+        "impacted": [
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,shop.sales_dashboard,PROD)",
+            "name": "sales_dashboard",
+            "hops_from_symptom": 1,
+            "kind": "dashboard",
+            "owner": "revenue-analytics@example.com",
+            "is_alerting": false
+          }
+        ],
+        "count": 1,
+        "silent_count": 1
+      },
+      "proposed_assertion": {
+        "target_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+        "target_name": "raw_orders",
+        "kind": "schema_contract",
+        "description": "`raw_orders` must not drop or rename a column that downstream consumers select.",
+        "definition": "-- Schema contract on raw_orders\n-- Fail the pipeline when a consumed column disappears.\ncolumns_required:\n  - name: amount\n    on_missing: fail\n    consumers: [downstream transforms selecting this column]",
+        "rationale": "The assertion that fired was on `weekly_sales`, which is where the fault surfaced. This one sits on `raw_orders`, where it started, so it fires before anything downstream is affected.",
+        "lead_time": null
+      },
+      "timeline": [
+        {
+          "at": "today 03:40",
+          "asset_name": "raw_orders",
+          "label": "Column `amount` renamed to `order_amount` 6 hours ago.",
+          "kind": "fault_origin"
+        },
+        {
+          "at": "today 06:55",
+          "asset_name": "orders_enriched",
+          "label": "Transform ran on data that was already bad",
+          "kind": "transform_ran"
+        },
+        {
+          "at": "today 08:10",
+          "asset_name": "weekly_sales",
+          "label": "Transform ran on data that was already bad",
+          "kind": "transform_ran"
+        },
+        {
+          "at": "today 09:12",
+          "asset_name": "weekly_sales",
+          "label": "weekly_sales.revenue must be > 0",
+          "kind": "assertion_fired"
+        }
+      ],
       "narrative": "`raw_orders` is the origin of this incident, and the fault reached the symptom along shop.raw_orders \u2192 shop.orders_enriched \u2192 shop.weekly_sales. Path + transform proven at 70% confidence. Evidence: Column `amount` renamed to `order_amount` 6 hours ago.",
       "narrative_source": "template",
       "trace": [
@@ -527,7 +719,7 @@
         },
         {
           "phase": "prove",
-          "message": "Verified path to raw_orders across 2 lineage edge(s) \u2014 transform that carried the fault captured.",
+          "message": "Verified path to raw_orders across 2 lineage edge(s) \u2014 transform that carried the fault captured; fault traced to the field `amount` -> `revenue`.",
           "data": {
             "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)",
             "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
@@ -552,7 +744,48 @@
             "causal_edge_index": 0,
             "grounding": "path_and_transform",
             "grounding_label": "Path + transform proven",
-            "verified": true
+            "verified": true,
+            "column_path": {
+              "cause_field": "amount",
+              "symptom_field": "revenue",
+              "fields": [
+                "amount",
+                "revenue",
+                "revenue"
+              ]
+            }
+          }
+        },
+        {
+          "phase": "scope",
+          "message": "1 downstream asset(s) inherit this data; 1 is affected without alerting.",
+          "data": {
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)",
+            "impacted": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,shop.sales_dashboard,PROD)",
+                "name": "sales_dashboard",
+                "hops_from_symptom": 1,
+                "kind": "dashboard",
+                "owner": "revenue-analytics@example.com",
+                "is_alerting": false
+              }
+            ],
+            "count": 1,
+            "silent_count": 1
+          }
+        },
+        {
+          "phase": "hypothesize",
+          "message": "No schema_contract assertion exists on `raw_orders`. Proposing one \u2014 it would have caught this at the source.",
+          "data": {
+            "target_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
+            "target_name": "raw_orders",
+            "kind": "schema_contract",
+            "description": "`raw_orders` must not drop or rename a column that downstream consumers select.",
+            "definition": "-- Schema contract on raw_orders\n-- Fail the pipeline when a consumed column disappears.\ncolumns_required:\n  - name: amount\n    on_missing: fail\n    consumers: [downstream transforms selecting this column]",
+            "rationale": "The assertion that fired was on `weekly_sales`, which is where the fault surfaced. This one sits on `raw_orders`, where it started, so it fires before anything downstream is affected.",
+            "lead_time": null
           }
         },
         {
@@ -579,7 +812,8 @@
           "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
           "tags": [
             "root-cause",
-            "cauzon-diagnosed"
+            "cauzon-diagnosed",
+            "needs-assertion"
           ]
         },
         {
@@ -646,7 +880,16 @@
         "causal_edge_index": 0,
         "grounding": "path_and_transform",
         "grounding_label": "Path + transform proven",
-        "verified": true
+        "verified": true,
+        "column_path": {
+          "cause_field": "user_id",
+          "symptom_field": "sessions",
+          "fields": [
+            "user_id",
+            "user_id",
+            "sessions"
+          ]
+        }
       },
       "ranked_candidates": [
         {
@@ -718,6 +961,56 @@
         "count": 0,
         "is_recurring": false
       },
+      "blast_radius": {
+        "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)",
+        "impacted": [
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,app.engagement_dashboard,PROD)",
+            "name": "engagement_dashboard",
+            "hops_from_symptom": 1,
+            "kind": "dashboard",
+            "owner": "product-analytics@example.com",
+            "is_alerting": false
+          }
+        ],
+        "count": 1,
+        "silent_count": 1
+      },
+      "proposed_assertion": {
+        "target_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+        "target_name": "user_dim",
+        "kind": "uniqueness",
+        "description": "`user_dim`'s join key must stay unique.",
+        "definition": "-- Uniqueness assertion on user_dim\nSELECT COUNT(*) AS duplicate_keys FROM (\n  SELECT user_id\n  FROM user_dim\n  GROUP BY 1 HAVING COUNT(*) > 1\n) HAVING COUNT(*) = 0;",
+        "rationale": "The assertion that fired was on `session_metrics`, which is where the fault surfaced. This one sits on `user_dim`, where it started, so it fires before anything downstream is affected.",
+        "lead_time": null
+      },
+      "timeline": [
+        {
+          "at": "yesterday 23:40",
+          "asset_name": "user_dim",
+          "label": "1,240 duplicate `user_id` values (3.1% of rows); the primary key is no longer unique after last night's reload.",
+          "kind": "fault_origin"
+        },
+        {
+          "at": "today 05:20",
+          "asset_name": "sessions_joined",
+          "label": "Transform ran on data that was already bad",
+          "kind": "transform_ran"
+        },
+        {
+          "at": "today 06:35",
+          "asset_name": "session_metrics",
+          "label": "Transform ran on data that was already bad",
+          "kind": "transform_ran"
+        },
+        {
+          "at": "today 07:41",
+          "asset_name": "session_metrics",
+          "label": "session_metrics.sessions within 25% of 7-day average",
+          "kind": "assertion_fired"
+        }
+      ],
       "narrative": "`user_dim` is the origin of this incident, and the fault reached the symptom along app.user_dim \u2192 app.sessions_joined \u2192 app.session_metrics. Path + transform proven at 70% confidence. Evidence: 1,240 duplicate `user_id` values (3.1% of rows); the primary key is no longer unique after last night's reload.",
       "narrative_source": "template",
       "trace": [
@@ -809,7 +1102,7 @@
         },
         {
           "phase": "prove",
-          "message": "Verified path to user_dim across 2 lineage edge(s) \u2014 transform that carried the fault captured.",
+          "message": "Verified path to user_dim across 2 lineage edge(s) \u2014 transform that carried the fault captured; fault traced to the field `user_id` -> `sessions`.",
           "data": {
             "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)",
             "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
@@ -834,7 +1127,48 @@
             "causal_edge_index": 0,
             "grounding": "path_and_transform",
             "grounding_label": "Path + transform proven",
-            "verified": true
+            "verified": true,
+            "column_path": {
+              "cause_field": "user_id",
+              "symptom_field": "sessions",
+              "fields": [
+                "user_id",
+                "user_id",
+                "sessions"
+              ]
+            }
+          }
+        },
+        {
+          "phase": "scope",
+          "message": "1 downstream asset(s) inherit this data; 1 is affected without alerting.",
+          "data": {
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)",
+            "impacted": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,app.engagement_dashboard,PROD)",
+                "name": "engagement_dashboard",
+                "hops_from_symptom": 1,
+                "kind": "dashboard",
+                "owner": "product-analytics@example.com",
+                "is_alerting": false
+              }
+            ],
+            "count": 1,
+            "silent_count": 1
+          }
+        },
+        {
+          "phase": "hypothesize",
+          "message": "No uniqueness assertion exists on `user_dim`. Proposing one \u2014 it would have caught this at the source.",
+          "data": {
+            "target_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
+            "target_name": "user_dim",
+            "kind": "uniqueness",
+            "description": "`user_dim`'s join key must stay unique.",
+            "definition": "-- Uniqueness assertion on user_dim\nSELECT COUNT(*) AS duplicate_keys FROM (\n  SELECT user_id\n  FROM user_dim\n  GROUP BY 1 HAVING COUNT(*) > 1\n) HAVING COUNT(*) = 0;",
+            "rationale": "The assertion that fired was on `session_metrics`, which is where the fault surfaced. This one sits on `user_dim`, where it started, so it fires before anything downstream is affected.",
+            "lead_time": null
           }
         },
         {
@@ -861,7 +1195,8 @@
           "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
           "tags": [
             "root-cause",
-            "cauzon-diagnosed"
+            "cauzon-diagnosed",
+            "needs-assertion"
           ]
         },
         {

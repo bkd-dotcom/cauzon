@@ -85,6 +85,8 @@ _SCENARIO_FRESHNESS = {
     },
     "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)": {
         "name": "raw_trips",
+        "fault_began_at": "Aug 5, 06:11",
+        "column_lineage": {"__origin__": "fare_amount"},
         "upstreams": [],
         "owner": "data-platform@example.com",
         "freshness_hours": 51,  # <-- planted fault: expected < 24h
@@ -97,6 +99,8 @@ _SCENARIO_FRESHNESS = {
     },
     "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)": {
         "name": "trips_cleaned",
+        "last_transform_at": "Aug 6, 07:00",
+        "column_lineage": {"fare_amount": "fare_amount"},
         "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)"],
         "owner": "analytics-eng@example.com",
         "freshness_hours": 50,
@@ -113,6 +117,9 @@ _SCENARIO_FRESHNESS = {
     },
     "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)": {
         "name": "daily_revenue",
+        "last_transform_at": "today 07:12",
+        "has_open_incident": True,
+        "column_lineage": {"fare_amount": "revenue"},
         "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.trips_cleaned,PROD)"],
         "freshness_hours": 49,
         "expected_freshness_hours": 24,
@@ -129,6 +136,7 @@ _SCENARIO_FRESHNESS = {
     },
     "urn:li:dataset:(urn:li:dataPlatform:looker,nyc.revenue_dashboard,PROD)": {
         "name": "revenue_dashboard",
+        "owner": "exec-reporting@example.com",
         "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)"],
         "freshness_hours": 48,
         "expected_freshness_hours": 24,
@@ -136,11 +144,39 @@ _SCENARIO_FRESHNESS = {
         "row_count_delta_pct": -40.0,
         "queries": [],
     },
+    "urn:li:dataset:(urn:li:dataPlatform:looker,nyc.exec_weekly_summary,PROD)": {
+        "name": "exec_weekly_summary",
+        "owner": "exec-reporting@example.com",
+        "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)"],
+        "freshness_hours": 48,
+        "expected_freshness_hours": 24,
+        "schema_changed_recently": False,
+        "row_count_delta_pct": -40.0,
+        "queries": [],
+    },
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.driver_payouts,PROD)": {
+        "name": "driver_payouts",
+        "owner": "finance-eng@example.com",
+        "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.daily_revenue,PROD)"],
+        "freshness_hours": 47,
+        "expected_freshness_hours": 24,
+        "schema_changed_recently": False,
+        "row_count_delta_pct": -40.0,
+        "queries": [
+            {
+                "query": "CREATE OR REPLACE TABLE driver_payouts AS "
+                "SELECT trip_date, revenue * 0.75 AS payout FROM daily_revenue",
+                "last_run": "6 hours ago",
+            }
+        ],
+    },
 }
 
 _SCENARIO_SCHEMA_CHANGE = {
     "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)": {
         "name": "raw_orders",
+        "fault_began_at": "today 03:40",
+        "column_lineage": {"__origin__": "amount"},
         "upstreams": [],
         "owner": "commerce-platform@example.com",
         "freshness_hours": 2,  # fresh — this is NOT a freshness problem
@@ -160,6 +196,8 @@ _SCENARIO_SCHEMA_CHANGE = {
     },
     "urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)": {
         "name": "orders_enriched",
+        "last_transform_at": "today 06:55",
+        "column_lineage": {"amount": "revenue"},
         "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)"],
         "owner": "analytics-eng@example.com",
         "freshness_hours": 3,
@@ -177,6 +215,9 @@ _SCENARIO_SCHEMA_CHANGE = {
     },
     "urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)": {
         "name": "weekly_sales",
+        "last_transform_at": "today 08:10",
+        "has_open_incident": True,
+        "column_lineage": {"revenue": "revenue"},
         "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:dbt,shop.orders_enriched,PROD)"],
         "owner": "revenue-analytics@example.com",
         "freshness_hours": 4,
@@ -194,6 +235,7 @@ _SCENARIO_SCHEMA_CHANGE = {
     },
     "urn:li:dataset:(urn:li:dataPlatform:looker,shop.sales_dashboard,PROD)": {
         "name": "sales_dashboard",
+        "owner": "revenue-analytics@example.com",
         "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:snowflake,shop.weekly_sales,PROD)"],
         "freshness_hours": 5,
         "expected_freshness_hours": 24,
@@ -210,6 +252,8 @@ _SCENARIO_SCHEMA_CHANGE = {
 _SCENARIO_FANOUT = {
     "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)": {
         "name": "user_dim",
+        "fault_began_at": "yesterday 23:40",
+        "column_lineage": {"__origin__": "user_id"},
         "upstreams": [],
         "owner": "identity-team@example.com",
         "freshness_hours": 1,  # fresh — not a staleness problem
@@ -242,6 +286,8 @@ _SCENARIO_FANOUT = {
     },
     "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)": {
         "name": "sessions_joined",
+        "last_transform_at": "today 05:20",
+        "column_lineage": {"user_id": "user_id"},
         "upstreams": [
             "urn:li:dataset:(urn:li:dataPlatform:s3,app.raw_events,PROD)",
             "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
@@ -262,6 +308,9 @@ _SCENARIO_FANOUT = {
     },
     "urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)": {
         "name": "session_metrics",
+        "last_transform_at": "today 06:35",
+        "has_open_incident": True,
+        "column_lineage": {"user_id": "sessions"},
         "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:snowflake,app.sessions_joined,PROD)"],
         "owner": "product-analytics@example.com",
         "freshness_hours": 2,
@@ -276,6 +325,16 @@ _SCENARIO_FANOUT = {
                 "last_run": "1 hour ago",
             }
         ],
+    },
+    "urn:li:dataset:(urn:li:dataPlatform:looker,app.engagement_dashboard,PROD)": {
+        "name": "engagement_dashboard",
+        "owner": "product-analytics@example.com",
+        "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:snowflake,app.session_metrics,PROD)"],
+        "freshness_hours": 2,
+        "expected_freshness_hours": 24,
+        "schema_changed_recently": False,
+        "row_count_delta_pct": 212.0,
+        "queries": [],
     },
 }
 
@@ -397,8 +456,12 @@ class MockDataHubClient:
         node = self._graph.get(urn, {})
         return {"urn": urn, **node}
 
+    def _downstreams_of(self, urn: str) -> list[str]:
+        """Inverse of `upstreams` — the graph only stores one direction."""
+        return [u for u, node in self._graph.items() if urn in node.get("upstreams", [])]
+
     def get_lineage(self, urn: str, direction: str = "upstream", hops: int = 3) -> list[dict[str, Any]]:
-        """BFS upstream up to `hops`, returning each node with its distance."""
+        """BFS in `direction` up to `hops`, returning each node with its distance."""
         results: list[dict[str, Any]] = []
         frontier = [(urn, 0)]
         seen = {urn}
@@ -406,12 +469,19 @@ class MockDataHubClient:
             cur, dist = frontier.pop(0)
             if dist >= hops:
                 continue
-            for up in self._graph.get(cur, {}).get("upstreams", []):
-                if up in seen:
+            neighbours = (
+                self._graph.get(cur, {}).get("upstreams", [])
+                if direction == "upstream"
+                else self._downstreams_of(cur)
+            )
+            for nxt in neighbours:
+                if nxt in seen or nxt not in self._graph:
                     continue
-                seen.add(up)
-                results.append({"urn": up, "hops": dist + 1, "name": self._graph[up]["name"]})
-                frontier.append((up, dist + 1))
+                seen.add(nxt)
+                results.append(
+                    {"urn": nxt, "hops": dist + 1, "name": self._graph[nxt]["name"]}
+                )
+                frontier.append((nxt, dist + 1))
 
         # Assets the lineage *search* index reports as related to the incident,
         # but which no upstreamLineage aspect actually connects. They enter the

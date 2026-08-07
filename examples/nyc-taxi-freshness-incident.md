@@ -37,6 +37,42 @@ nyc.raw_trips -> nyc.trips_cleaned -> nyc.daily_revenue
 CREATE OR REPLACE TABLE trips_cleaned AS SELECT * FROM raw_trips WHERE fare_amount > 0
 ```
 
+### Column-level proof
+The fault entered at `fare_amount` and surfaced as `revenue`:
+```
+fare_amount -> fare_amount -> revenue
+```
+
+### How it propagated
+
+| When | Asset | What happened |
+| --- | --- | --- |
+| Aug 5, 06:11 | `raw_trips` | Freshness 51h exceeds the 24h SLA (+27h stale). |
+| Aug 6, 07:00 | `trips_cleaned` | Transform ran on data that was already bad |
+| today 07:12 | `daily_revenue` | Transform ran on data that was already bad |
+| today 08:04 | `daily_revenue` | row_count within 10% of 7-day average |
+
+### Blast radius
+3 downstream asset(s) inherit this data. 3 of them are wrong without alerting, so nobody is currently looking:
+- **revenue_dashboard** (dashboard, 1 hop downstream) — owner exec-reporting@example.com — **not alerting**
+- **exec_weekly_summary** (dashboard, 1 hop downstream) — owner exec-reporting@example.com — **not alerting**
+- **driver_payouts** (dataset, 1 hop downstream) — owner finance-eng@example.com — **not alerting**
+
+### Missing guardrail
+There is no freshness assertion on `raw_trips`.
+
+`raw_trips` must receive new data at least every 24 hours.
+
+The assertion that fired was on `daily_revenue`, which is where the fault surfaced. This one sits on `raw_trips`, where it started, so it fires before anything downstream is affected. This asset has failed 2 time(s) before with no check in place, which is why it keeps recurring.
+Estimated lead time: ~27h earlier than the downstream alert.
+
+```sql
+-- Freshness assertion on raw_trips
+SELECT MAX(_ingested_at) AS latest
+FROM raw_trips
+HAVING MAX(_ingested_at) > CURRENT_TIMESTAMP - INTERVAL '24 hours';
+```
+
 ### Candidates rejected by the proof gate
 - **marketing_spend** (score 8.0) — No lineage path connects this asset to the symptom, so the claim cannot be grounded.
 

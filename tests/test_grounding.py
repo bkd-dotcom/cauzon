@@ -391,3 +391,219 @@ def test_default_entrypoint_still_solves_the_default_scenario():
     diag = investigate_first_open_incident(write_back=False)
     assert diag.root_cause.name == "raw_trips"
     assert diag.grounded is True
+
+
+# --------------------------------------------------------------------------- #
+# Blast radius — the other direction
+# --------------------------------------------------------------------------- #
+def test_blast_radius_finds_downstream_assets_nobody_is_watching():
+    """The asset that alerted is rarely the only one that is wrong."""
+    _client, diag = _investigate("freshness")
+    blast = diag.blast_radius
+    assert blast is not None
+    names = {a.name for a in blast.impacted}
+    assert names == {"revenue_dashboard", "exec_weekly_summary", "driver_payouts"}
+    # None of them has its own assertion, which is precisely the danger.
+    assert len(blast.silent) == blast.count == 3
+
+
+def test_blast_radius_distinguishes_dashboards_from_datasets():
+    """A wrong dashboard matters more than a wrong intermediate table."""
+    _client, diag = _investigate("freshness")
+    kinds = {a.name: a.kind for a in diag.blast_radius.impacted}
+    assert kinds["revenue_dashboard"] == "dashboard"
+    assert kinds["driver_payouts"] == "dataset"
+
+
+def test_blast_radius_does_not_include_the_symptom_or_upstreams():
+    _client, diag = _investigate("freshness")
+    urns = {a.urn for a in diag.blast_radius.impacted}
+    assert diag.incident.urn not in urns
+    assert diag.root_cause.urn not in urns
+
+
+def test_empty_blast_radius_is_reported_not_omitted():
+    """Looking and finding nothing is a different answer from not looking."""
+    client = MockDataHubClient()
+    agent = CauzonAgent(client=client)
+    # Investigate the leaf: nothing consumes it.
+    leaf = next(
+        urn for urn, n in client._graph.items() if n["name"] == "driver_payouts"
+    )
+    diag = agent.investigate(
+        Incident(urn=leaf, title="leaf", description=""), write_back=False
+    )
+    assert diag.blast_radius is not None
+    assert diag.blast_radius.count == 0
+
+
+def test_unreachable_downstream_lineage_degrades_to_none():
+    class NoDownstream(MockDataHubClient):
+        def get_lineage(self, urn, direction="upstream", hops=3):
+            if direction == "downstream":
+                raise RuntimeError("graph index unavailable")
+            return super().get_lineage(urn, direction=direction, hops=hops)
+
+    client = NoDownstream()
+    agent = CauzonAgent(client=client)
+    raw = client.list_open_incidents()[0]
+    diag = agent.investigate(
+        Incident(urn=raw["urn"], title=raw["title"], description=""), write_back=False
+    )
+    assert diag.blast_radius is None  # could not look
+    assert diag.grounded is True  # investigation still succeeds
+
+
+# --------------------------------------------------------------------------- #
+# Column-level proof — a further rung on the same ladder
+# --------------------------------------------------------------------------- #
+def test_column_path_names_the_field_that_carried_the_fault():
+    _client, diag = _investigate("schema_change")
+    cp = diag.proof_path.column_path
+    assert cp is not None
+    assert cp.cause_field == "amount"
+    assert cp.symptom_field == "revenue"
+    assert len(cp.fields) == len(diag.proof_path.nodes)
+
+
+def test_column_path_is_absent_rather_than_guessed():
+    """No column lineage means the proof holds at table level and says so."""
+    client = MockDataHubClient()
+    for node in client._graph.values():
+        node.pop("column_lineage", None)
+    agent = CauzonAgent(client=client)
+    raw = client.list_open_incidents()[0]
+    diag = agent.investigate(
+        Incident(urn=raw["urn"], title=raw["title"], description=""), write_back=False
+    )
+    assert diag.grounded is True
+    assert diag.proof_path.column_path is None
+
+
+def test_partial_column_lineage_yields_no_column_claim():
+    """A gap anywhere in the chain must not produce a half-invented path."""
+    client = MockDataHubClient()
+    mid = next(u for u, n in client._graph.items() if n["name"] == "trips_cleaned")
+    client._graph[mid].pop("column_lineage")
+    agent = CauzonAgent(client=client)
+    raw = client.list_open_incidents()[0]
+    diag = agent.investigate(
+        Incident(urn=raw["urn"], title=raw["title"], description=""), write_back=False
+    )
+    assert diag.proof_path.column_path is None
+
+
+# --------------------------------------------------------------------------- #
+# Assertion proposal — diagnosis that prevents the next occurrence
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "scenario,kind,target",
+    [
+        ("freshness", "freshness", "raw_trips"),
+        ("schema_change", "schema_contract", "raw_orders"),
+        ("fanout", "uniqueness", "user_dim"),
+    ],
+)
+def test_proposed_assertion_matches_the_fault_and_sits_on_the_origin(
+    scenario, kind, target
+):
+    _client, diag = _investigate(scenario)
+    proposal = diag.proposed_assertion
+    assert proposal is not None
+    assert proposal.kind == kind
+    # On the origin, not on the asset that happened to alert.
+    assert proposal.target_name == target
+    assert proposal.target_urn == diag.root_cause.urn
+    assert proposal.definition.strip()
+
+
+def test_proposed_assertion_quantifies_the_lead_time_it_would_have_given():
+    _client, diag = _investigate("freshness")
+    # 51h actual against a 24h SLA — a check at the source fires 27h earlier.
+    assert diag.proposed_assertion.lead_time == "~27h earlier than the downstream alert"
+
+
+def test_proposed_assertion_cites_recurrence_as_the_reason_it_is_needed():
+    _client, diag = _investigate("freshness")
+    assert "failed 2 time(s) before" in diag.proposed_assertion.rationale
+
+
+def test_assertion_definitions_use_the_real_identifiers():
+    _client, schema = _investigate("schema_change")
+    assert "amount" in schema.proposed_assertion.definition
+    _client, fanout = _investigate("fanout")
+    assert "user_id" in fanout.proposed_assertion.definition
+    assert "<join_key>" not in fanout.proposed_assertion.definition
+
+
+def test_no_assertion_proposed_when_nothing_was_proven():
+    client = MockDataHubClient()
+    for node in client._graph.values():
+        node["freshness_hours"] = node["expected_freshness_hours"]
+        node["row_count_delta_pct"] = 0.0
+        node["schema_changed_recently"] = False
+    agent = CauzonAgent(client=client)
+    diag = agent.investigate(
+        Incident(urn=client._symptom_urn, title="t", description=""), write_back=False
+    )
+    assert diag.proposed_assertion is None
+
+
+def test_missing_guardrail_is_tagged_so_it_is_findable_by_search():
+    client, _diag = _investigate("freshness", write_back=True)
+    tags = next(w for w in client.writes if w["op"] == "add_tags")["tags"]
+    assert "needs-assertion" in tags
+
+
+# --------------------------------------------------------------------------- #
+# Propagation timeline — the fault in time, not topology
+# --------------------------------------------------------------------------- #
+def test_timeline_runs_from_the_origin_to_the_alert():
+    _client, diag = _investigate("freshness")
+    kinds = [e.kind for e in diag.timeline]
+    assert kinds[0] == "fault_origin"
+    assert kinds[-1] == "assertion_fired"
+    assert "transform_ran" in kinds
+
+
+def test_timeline_shows_transforms_consuming_already_bad_data():
+    """The point of the timeline: downstream jobs ran *after* the fault began."""
+    _client, diag = _investigate("freshness")
+    ran = [e for e in diag.timeline if e.kind == "transform_ran"]
+    assert [e.asset_name for e in ran] == ["trips_cleaned", "daily_revenue"]
+    assert all("already bad" in e.label for e in ran)
+
+
+def test_timeline_is_empty_when_nothing_was_proven():
+    client = MockDataHubClient()
+    for node in client._graph.values():
+        node["freshness_hours"] = node["expected_freshness_hours"]
+        node["row_count_delta_pct"] = 0.0
+        node["schema_changed_recently"] = False
+    agent = CauzonAgent(client=client)
+    diag = agent.investigate(
+        Incident(urn=client._symptom_urn, title="t", description=""), write_back=False
+    )
+    assert diag.timeline == []
+
+
+# --------------------------------------------------------------------------- #
+# All of it must survive serialisation and reach the dossier
+# --------------------------------------------------------------------------- #
+def test_new_findings_survive_serialisation():
+    _client, diag = _investigate("freshness")
+    d = diag.to_dict()
+    assert d["blast_radius"]["silent_count"] == 3
+    assert d["proposed_assertion"]["kind"] == "freshness"
+    assert len(d["timeline"]) == 4
+    assert d["proof_path"]["column_path"]["cause_field"] == "fare_amount"
+
+
+def test_dossier_records_every_new_finding():
+    _client, diag = _investigate("freshness", write_back=True)
+    dossier = CauzonAgent._render_dossier(diag).lower()
+    assert "column-level proof" in dossier
+    assert "how it propagated" in dossier
+    assert "blast radius" in dossier
+    assert "missing guardrail" in dossier
+    assert "not alerting" in dossier
