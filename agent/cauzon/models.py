@@ -455,3 +455,65 @@ class Capabilities:
             }
             for name in CAPABILITY_LABELS
         }
+
+
+# --------------------------------------------------------------------------- #
+# One cause behind several alerts
+# --------------------------------------------------------------------------- #
+@dataclass
+class CorrelatedSymptom:
+    """One alert a shared cause was proven to reach."""
+
+    urn: str
+    name: str
+    hops_from_cause: int
+    proof: ProofPath
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "urn": self.urn,
+            "name": self.name,
+            "hops_from_cause": self.hops_from_cause,
+            "proof": self.proof.to_dict(),
+        }
+
+
+@dataclass
+class Correlation:
+    """Several open incidents traced to one upstream cause.
+
+    When an upstream asset fails, each downstream team opens their own incident on
+    their own asset. The queue then looks like several problems, and the same
+    question gets answered once per team. This is that queue collapsed — but only
+    where a path can be proven to *each* symptom, and graded at the weakest rung
+    among them, because a group claim cannot be better grounded than its worst link.
+    """
+
+    cause_urn: str
+    cause_name: str
+    symptoms: list[CorrelatedSymptom] = field(default_factory=list)
+    signals: list[Signal] = field(default_factory=list)
+    evidence_notes: list[str] = field(default_factory=list)
+    cause_owner: Optional[str] = None
+    # Symptoms this candidate is upstream of but could not be proven to reach.
+    # Reported rather than folded in: the interesting output is often the refusal.
+    unexplained: list[str] = field(default_factory=list)
+    grounding: GroundingLevel = GroundingLevel.UNGROUNDED
+
+    @property
+    def count(self) -> int:
+        return len(self.symptoms)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "cause_urn": self.cause_urn,
+            "cause_name": self.cause_name,
+            "cause_owner": self.cause_owner,
+            "signals": [s.value for s in self.signals],
+            "evidence_notes": self.evidence_notes,
+            "symptoms": [s.to_dict() for s in self.symptoms],
+            "unexplained": self.unexplained,
+            "count": self.count,
+            "grounding": self.grounding.value,
+            "grounding_label": self.grounding.label,
+        }

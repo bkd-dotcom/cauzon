@@ -195,3 +195,26 @@ def test_websocket_investigates_the_scenario_it_was_sent():
                 break
     assert diagnosis is not None
     assert diagnosis["root_cause"]["name"] == "user_dim"
+
+
+def test_correlate_finds_the_shared_cause_and_nothing_else():
+    """The queue's most useful reading is often that it is shorter than it looks."""
+    body = client.get("/api/correlate").json()
+
+    assert len(body) == 1, "two scenarios share one graph; it must not be reported twice"
+    found = body[0]
+    assert found["cause_name"] == "currency_rates"
+    assert found["count"] >= 2
+    assert found["grounding"] == "path_and_transform"
+    # Grouped on real edges: every symptom carries its own proof.
+    assert all(s["proof"]["verified"] for s in found["symptoms"])
+
+
+def test_the_catalog_queue_does_not_double_count_a_shared_graph():
+    """Two scenarios over one graph must not inflate the inbox or the map."""
+    inbox = client.get("/api/inbox").json()
+    catalog = client.get("/api/catalog").json()
+
+    assert len(inbox) == len({e["urn"] for e in inbox})
+    urns = [n["urn"] for n in catalog["nodes"]]
+    assert len(urns) == len(set(urns))

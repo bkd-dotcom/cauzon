@@ -417,3 +417,32 @@ export function humaniseHours(hours: number | null): string {
   if (days < 90) return `${Math.round(days)} days`;
   return `${(days / 365).toFixed(1)} years`;
 }
+
+
+/** One alert a shared cause was proven to reach. */
+export interface CorrelatedSymptom {
+  urn: string;
+  name: string;
+  hops_from_cause: number;
+  proof: ProofPath;
+}
+
+/**
+ * Several open incidents traced to one upstream cause.
+ *
+ * Graded at the weakest rung among its per-symptom proofs: a group claim cannot be
+ * better grounded than its worst link.
+ */
+export interface Correlation {
+  cause_urn: string;
+  cause_name: string;
+  cause_owner: string | null;
+  signals: Signal[];
+  evidence_notes: string[];
+  symptoms: CorrelatedSymptom[];
+  /** Upstream of these, but not provably the cause of them. */
+  unexplained: string[];
+  count: number;
+  grounding: GroundingLevel;
+  grounding_label: string;
+}

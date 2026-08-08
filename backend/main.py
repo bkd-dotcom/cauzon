@@ -25,6 +25,7 @@ from pydantic import BaseModel
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
 
 from cauzon.agent import CauzonAgent  # noqa: E402
+from cauzon.correlate import correlate  # noqa: E402
 from cauzon.datahub_client import (  # noqa: E402
     MOCK_SCENARIOS,
     MCPDataHubClient,
@@ -199,7 +200,23 @@ def _catalog_clients() -> list[Any]:
     if _using_live():
         return [_live()]
     if _using_mock():
-        return [MockDataHubClient(scenario=name) for name in MOCK_SCENARIOS]
+        # One client per distinct graph, not per scenario name. Two scenarios share
+        # the shared_cause graph — two teams alerting on the same outage — so
+        # keying on the name would walk that graph twice and report the same
+        # correlation and the same map nodes twice over.
+        clients: list[Any] = []
+        seen_graphs: set[frozenset[str]] = set()
+        for name in MOCK_SCENARIOS:
+            client = MockDataHubClient(scenario=name)
+            # Keyed on the asset set, not on object identity: the client
+            # deep-copies its graph, so two clients over the same scenario graph
+            # hold equal-but-distinct dicts.
+            key = frozenset(client._graph)
+            if key in seen_graphs:
+                continue
+            seen_graphs.add(key)
+            clients.append(client)
+        return clients
     return [_agent().client]
 
 
@@ -263,6 +280,28 @@ def zones() -> dict[str, Any]:
         "zone_dataset_id": ZONE_DATASET_ID,
         "zone_source_url": f"https://data.cityofnewyork.us/d/{ZONE_DATASET_ID}",
     }
+
+
+@app.get("/api/correlate")
+def correlate_incidents() -> list[dict[str, Any]]:
+    """Open incidents that share one provable upstream cause.
+
+    Correlated within each catalog rather than across all of them: a cause has to
+    be upstream of its symptoms, and the mock's scenario graphs are disjoint, so
+    cross-graph comparison could only ever produce a false positive.
+
+    An empty list is a real answer — it means these are separate failures.
+    """
+    out: list[dict[str, Any]] = []
+    for client in _catalog_clients():
+        try:
+            incidents = client.list_open_incidents()
+        except Exception:
+            continue
+        for correlation in correlate(client, incidents):
+            out.append(correlation.to_dict())
+    out.sort(key=lambda c: c["count"], reverse=True)
+    return out
 
 
 @app.post("/api/investigate")

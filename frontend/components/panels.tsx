@@ -9,6 +9,8 @@
  * did that.
  */
 
+import Link from "next/link";
+
 import {
   PHASE_LABELS,
   ASSERTION_KIND_LABELS,
@@ -17,6 +19,7 @@ import {
   shortName,
   type BlastRadius,
   type ConfidenceBreakdown,
+  type Correlation,
   type Diagnosis,
   type Health,
   type Phase,
@@ -564,6 +567,90 @@ export function CapabilityPanel({ health }: { health: Health | null }) {
           </div>
         ))}
       </dl>
+    </div>
+  );
+}
+
+
+/**
+ * One cause behind several alerts.
+ *
+ * The queue's most useful reading is often that it is shorter than it looks. Each
+ * symptom keeps its own proof rather than being asserted by association, and
+ * anything the cause is upstream of but could not be proven to reach is listed
+ * separately instead of being rounded in.
+ */
+export function CorrelationPanel({
+  correlation,
+  catalog,
+}: {
+  correlation: Correlation;
+  catalog: "demo" | "live";
+}) {
+  return (
+    <div className="space-y-3">
+      <p className="prose-evidence m-0">
+        <span className="text-jade">{correlation.count} of these incidents</span>{" "}
+        share one upstream cause. Investigating them separately would answer the
+        same question {correlation.count} times.
+      </p>
+
+      <div className="well p-4">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-sm font-semibold text-jade">
+            {correlation.cause_name}
+          </span>
+          <span className="label">{correlation.grounding_label}</span>
+          {correlation.cause_owner && (
+            <span className="text-[11px] text-muted">{correlation.cause_owner}</span>
+          )}
+          <Link
+            href={{
+              pathname: "/investigate",
+              query: {
+                urn: correlation.cause_urn,
+                ...(catalog === "live" ? { catalog } : {}),
+              },
+            }}
+            className="ml-auto shrink-0 text-[10px] tracking-[0.1em] text-jade uppercase no-underline hover:underline"
+          >
+            Investigate the cause →
+          </Link>
+        </div>
+        {correlation.evidence_notes.length > 0 && (
+          <p className="prose-evidence m-0 mt-2">{correlation.evidence_notes[0]}</p>
+        )}
+        <ul className="m-0 mt-3 list-none space-y-0 p-0">
+          {correlation.symptoms.map((symptom) => (
+            <li
+              key={symptom.urn}
+              className="rule flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2"
+            >
+              <span aria-hidden className="text-muted">
+                ↳
+              </span>
+              <span className="text-[13px] text-bone-dim">{symptom.name}</span>
+              <span className="label">
+                {symptom.hops_from_cause} hop
+                {symptom.hops_from_cause === 1 ? "" : "s"} downstream
+              </span>
+              <span className="label ml-auto shrink-0 text-jade">
+                {symptom.proof.grounding_label}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {correlation.unexplained.length > 0 && (
+        <p className="prose-evidence m-0 text-muted">
+          {correlation.unexplained.length} further incident
+          {correlation.unexplained.length === 1 ? " is" : "s are"} downstream of{" "}
+          {correlation.cause_name} but could not be proven to originate there, so
+          {correlation.unexplained.length === 1 ? " it is" : " they are"} left out
+          of this group rather than assumed into it.
+        </p>
+      )}
     </div>
   );
 }

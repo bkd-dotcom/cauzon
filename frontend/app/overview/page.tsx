@@ -13,7 +13,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import CatalogMap, { CatalogNodeDetail } from "@/components/CatalogMap";
-import { Panel } from "@/components/panels";
+import { CorrelationPanel, Panel } from "@/components/panels";
 import ZoneMap from "@/components/ZoneMap";
 import {
   LIVE_CATALOG_AVAILABLE,
@@ -25,6 +25,7 @@ import {
   humaniseHours,
   type CatalogMap as CatalogMapData,
   type CatalogNode,
+  type Correlation,
   type Health,
   type InboxEntry,
 } from "@/lib/types";
@@ -36,6 +37,7 @@ export default function OverviewPage() {
   const [health, setHealth] = useState<Health | null>(null);
   const [inbox, setInbox] = useState<InboxEntry[] | null>(null);
   const [map, setMap] = useState<CatalogMapData | null>(null);
+  const [correlations, setCorrelations] = useState<Correlation[]>([]);
   const [failed, setFailed] = useState(false);
   const [sort, setSort] = useState<SortKey>("overdue");
   const [inspected, setInspected] = useState<CatalogNode | null>(null);
@@ -44,18 +46,23 @@ export default function OverviewPage() {
     const base = apiBaseFor(which);
     setInbox(null);
     setMap(null);
+    setCorrelations([]);
     setFailed(false);
     setInspected(null);
     try {
-      const [healthRes, inboxRes, mapRes] = await Promise.all([
+      const [healthRes, inboxRes, mapRes, corrRes] = await Promise.all([
         fetch(`${base}/api/health`),
         fetch(`${base}/api/inbox`),
         fetch(`${base}/api/catalog`),
+        // Optional: an older deployed backend has no such endpoint, and the rest
+        // of the page is still worth showing.
+        fetch(`${base}/api/correlate`).catch(() => null),
       ]);
       if (!inboxRes.ok || !mapRes.ok) throw new Error("bad response");
       setHealth(healthRes.ok ? await healthRes.json() : null);
       setInbox(await inboxRes.json());
       setMap(await mapRes.json());
+      setCorrelations(corrRes?.ok ? await corrRes.json() : []);
     } catch {
       // These views need a backend; there is no recorded fallback for them, so
       // say so rather than showing an empty table that looks like "all clear".
@@ -134,6 +141,23 @@ export default function OverviewPage() {
             </p>
           </Panel>
         )}
+
+        {/* ---- one cause behind several alerts ---------------------------
+            Above the inbox on purpose: the most useful thing to know about a
+            queue is when it is shorter than it looks. */}
+        {correlations.map((correlation) => (
+          <Panel
+            key={correlation.cause_urn}
+            title="One cause, several alerts"
+            aside={
+              <span className="label">
+                {correlation.count} correlated · {correlation.grounding_label}
+              </span>
+            }
+          >
+            <CorrelationPanel correlation={correlation} catalog={catalog} />
+          </Panel>
+        ))}
 
         {/* ---- triage inbox ---------------------------------------------- */}
         {inbox && (
