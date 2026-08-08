@@ -13,6 +13,7 @@ import {
   FixPanel,
   GroundingBadge,
   Panel,
+  CapabilityPanel,
   ProofPanel,
   Prose,
   RecurrencePanel,
@@ -326,6 +327,15 @@ function Investigate() {
             aside={<span className="label">{diagnosis.recurrence.count} prior dossiers</span>}
           >
             <RecurrencePanel recurrence={diagnosis.recurrence} />
+          </Panel>
+        )}
+
+        {/* Shown only once a diagnosis exists, because that is when a reader is
+            looking for the findings below and needs to know which of them this
+            catalog cannot produce. */}
+        {diagnosis && (
+          <Panel title="What this catalog cannot answer">
+            <CapabilityPanel health={health} />
           </Panel>
         )}
 

@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
 from cauzon.agent import CauzonAgent, investigate_first_open_incident
 from cauzon.datahub_client import MockDataHubClient
 from cauzon.models import (
+    Capabilities,
     ConfidenceBreakdown,
     Diagnosis,
     GroundingLevel,
@@ -716,3 +717,66 @@ def test_get_client_refuses_an_unknown_backend(monkeypatch):
     monkeypatch.setenv("CAUZON_DATAHUB_BACKEND", "postgres")
     with pytest.raises(ValueError, match="not a known backend"):
         get_client()
+
+
+# --------------------------------------------------------------------------- #
+# Declared capabilities
+# --------------------------------------------------------------------------- #
+def test_every_backend_declares_what_it_cannot_answer():
+    """An absent finding and an unanswerable question must not look identical.
+
+    Four post-verdict findings were presented as agent capabilities while being
+    driven by keys only the demo fixtures set. On a real catalog they came back
+    empty with no explanation, which reads as "there is nothing to report".
+    """
+    from cauzon.datahub_client import MCPDataHubClient, MockDataHubClient as _Mock
+    from cauzon.live_client import LiveDataHubClient
+    from cauzon.models import (
+        CAP_ALERTING_STATUS,
+        CAP_COLUMN_LINEAGE,
+        CAP_TRANSFORM_SQL,
+        CAP_WRITEBACK,
+    )
+
+    # The planted fixtures carry every key, so nothing degrades there.
+    assert _Mock.capabilities.unavailable == {}
+
+    live = LiveDataHubClient.capabilities
+    assert not live.has(CAP_COLUMN_LINEAGE)
+    assert not live.has(CAP_TRANSFORM_SQL)
+    assert not live.has(CAP_WRITEBACK)
+    # Fixed in this same change: the open-incident queue is a real source for it.
+    assert live.has(CAP_ALERTING_STATUS)
+
+    # Every stated gap carries a reason a reader can act on, not just a flag.
+    for name, reason in live.unavailable.items():
+        assert reason and reason.endswith("."), name
+        assert len(reason) > 30, name
+
+    assert MCPDataHubClient.capabilities.has(CAP_COLUMN_LINEAGE)
+
+
+def test_capabilities_are_readable_without_constructing_a_client():
+    """Instantiating the MCP client opens an SDK connection; /api/health must not.
+
+    The frontend polls health while waiting for a scale-to-zero instance to wake,
+    so this being a class attribute is load-bearing, not stylistic.
+    """
+    from cauzon.datahub_client import MCPDataHubClient
+
+    assert isinstance(MCPDataHubClient.__dict__["capabilities"], Capabilities)
+
+
+def test_live_derives_a_transform_time_so_the_timeline_is_not_empty():
+    """Socrata's publication time IS when the asset was last rebuilt."""
+    from cauzon.live_client import LiveDataHubClient
+    from cauzon.live_source import SocrataCatalog
+
+    def fake_fetch(ids):
+        return {i: {"name": f"ds-{i}", "updated_at": 1_700_000_000} for i in ids}
+
+    client = LiveDataHubClient(catalog=SocrataCatalog(fetch=fake_fetch))
+    entity = client.get_entity(client.list_assets()[0]["urn"])
+    assert entity["last_transform_at"], "publication time should have been formatted"
+    # Onset is genuinely unknowable here and must stay absent rather than guessed.
+    assert entity.get("fault_began_at") is None

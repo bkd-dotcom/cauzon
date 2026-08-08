@@ -21,9 +21,22 @@ from __future__ import annotations
 import os
 from typing import Any, Optional, Protocol
 
+from .models import (
+    CAP_ALERTING_STATUS,
+    CAP_COLUMN_LINEAGE,
+    CAP_FAULT_ONSET,
+    CAP_PRIOR_DOSSIERS,
+    CAP_TRANSFORM_SQL,
+    Capabilities,
+)
+
 
 class DataHubClient(Protocol):
-    """Interface the agent depends on. Both backends implement this."""
+    """Interface the agent depends on. Every backend implements this."""
+
+    # What this catalog can and cannot answer. Declared rather than discovered by
+    # a finding coming back empty — see models.Capabilities.
+    capabilities: Capabilities
 
     def list_open_incidents(self) -> list[dict[str, Any]]: ...
     def search(self, query: str) -> list[dict[str, Any]]: ...
@@ -418,6 +431,10 @@ class MockDataHubClient:
     ("freshness" [default] or "schema_change"), or pass `scenario=` directly.
     """
 
+    # The planted fixtures carry every key the agent can read, which is the point
+    # of a demo backend: it is the one catalog where nothing degrades.
+    capabilities = Capabilities()
+
     def __init__(self, scenario: Optional[str] = None) -> None:
         scenario = (scenario or os.getenv("CAUZON_MOCK_SCENARIO", "freshness")).lower()
         if scenario not in _SCENARIOS:
@@ -675,6 +692,18 @@ def _short_name(urn: str) -> str:
 
 class MCPDataHubClient:
     """Talks to a real DataHub instance through the Agent Context Kit / MCP."""
+
+    # A real DataHub holds lineage, query history, assertions and documents, so
+    # most findings are reachable. What it does not model is when a fault *began*:
+    # there is no aspect for that, and the demo fixture supplies it by hand.
+    capabilities = Capabilities(
+        unavailable={
+            CAP_FAULT_ONSET: (
+                "DataHub records when an assertion failed, not when the underlying "
+                "fault began, so the timeline starts at detection."
+            ),
+        }
+    )
 
     def __init__(self, gms_url: Optional[str] = None, token: Optional[str] = None) -> None:
         self.gms_url = gms_url or os.getenv("DATAHUB_GMS_URL", "http://localhost:8080")

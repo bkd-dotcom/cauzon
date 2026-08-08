@@ -27,12 +27,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
 from cauzon.agent import CauzonAgent  # noqa: E402
 from cauzon.datahub_client import (  # noqa: E402
     MOCK_SCENARIOS,
+    MCPDataHubClient,
     MockDataHubClient,
     all_mock_incidents,
     scenario_for_symptom,
 )
 from cauzon.live_client import LiveDataHubClient  # noqa: E402
-from cauzon.models import Incident, TraceEvent  # noqa: E402
+from cauzon.models import Capabilities, Incident, TraceEvent  # noqa: E402
 from cauzon.overview import CatalogMap, build_catalog_map, build_inbox  # noqa: E402
 from cauzon.zone_volume import ZONE_DATASET_ID, ZoneVolume  # noqa: E402
 
@@ -123,6 +124,25 @@ def _agent(urn: str | None = None) -> CauzonAgent:
     return CauzonAgent()
 
 
+def _capabilities() -> Capabilities:
+    """What the configured backend can answer.
+
+    Read off the client *class*, not an instance. `capabilities` is a class
+    attribute precisely so this costs nothing: instantiating `MCPDataHubClient`
+    opens an SDK connection to DataHub, and /api/health is polled by the frontend's
+    wake-up probe.
+    """
+    return getattr(_client_class(), "capabilities", Capabilities())
+
+
+def _client_class() -> type:
+    if _using_live():
+        return LiveDataHubClient
+    if _using_mock():
+        return MockDataHubClient
+    return MCPDataHubClient
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     """What this deployment actually is.
@@ -136,6 +156,11 @@ def health() -> dict[str, Any]:
         "datahub_backend": _backend_kind(),
         "write_back_allowed": _writeback_allowed(),
         "datahub_ui_url": _datahub_ui_url(),
+        # Which findings this catalog can support, and why not where it cannot. The
+        # UI names the unavailable ones: four post-verdict findings used to depend
+        # on metadata only the demo fixtures set, so on a real catalog they came
+        # back empty and read as "nothing to report".
+        "capabilities": _capabilities().to_dict(),
     }
     if _using_live():
         # Say exactly which parts of this catalog are real. Signals are; lineage

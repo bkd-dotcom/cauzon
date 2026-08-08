@@ -402,3 +402,58 @@ class TraceEvent:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+# --------------------------------------------------------------------------- #
+# What a catalog can actually answer
+# --------------------------------------------------------------------------- #
+# Post-verdict findings each depend on metadata not every catalog holds. Naming
+# them lets a backend declare its own limits up front, instead of the finding
+# silently coming back empty and reading as "there is nothing to report".
+CAP_COLUMN_LINEAGE = "column_lineage"
+CAP_TRANSFORM_SQL = "transform_sql"
+CAP_FAULT_ONSET = "fault_onset"
+CAP_ALERTING_STATUS = "alerting_status"
+CAP_PRIOR_DOSSIERS = "prior_dossiers"
+CAP_WRITEBACK = "writeback"
+
+CAPABILITY_LABELS = {
+    CAP_COLUMN_LINEAGE: "Column-level proof",
+    CAP_TRANSFORM_SQL: "Transform SQL",
+    CAP_FAULT_ONSET: "Fault onset time",
+    CAP_ALERTING_STATUS: "Downstream alerting status",
+    CAP_PRIOR_DOSSIERS: "Prior dossiers",
+    CAP_WRITEBACK: "Write-back",
+}
+
+
+@dataclass(frozen=True)
+class Capabilities:
+    """Which findings a backend can support, and why not where it cannot.
+
+    An absent finding is ambiguous on its own: "no column path" could mean the
+    fault did not travel through a column, or that the catalog has no column
+    lineage to read. Four of Cauzon's post-verdict findings were presented as
+    agent capabilities while being driven by metadata only the demo fixtures set,
+    so on a real catalog they vanished with no explanation. A backend now states
+    what it cannot answer, and the UI and dossier repeat the reason.
+    """
+
+    # name -> why it is unavailable. Absent from the dict means available.
+    unavailable: dict[str, str] = field(default_factory=dict)
+
+    def has(self, name: str) -> bool:
+        return name not in self.unavailable
+
+    def why(self, name: str) -> Optional[str]:
+        return self.unavailable.get(name)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            name: {
+                "label": CAPABILITY_LABELS.get(name, name),
+                "available": name not in self.unavailable,
+                "reason": self.unavailable.get(name),
+            }
+            for name in CAPABILITY_LABELS
+        }

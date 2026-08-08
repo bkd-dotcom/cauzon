@@ -63,7 +63,6 @@ export interface ImpactedAsset {
   hops_from_symptom: number;
   kind: "dataset" | "dashboard";
   owner: string | null;
-  /** False means it is wrong and nobody is being told — the dangerous case. */
   /**
    * true = alerting, false = affected and silent, null = this backend could not
    * report it. Null is not "silent": an undetermined status is not evidence that
@@ -205,6 +204,43 @@ export interface Health {
   /** Base URL of the DataHub UI, when there is a real one to link to. */
   datahub_ui_url: string | null;
   live_source?: LiveSource | null;
+  /**
+   * Which findings this catalog can support. Optional so an older deployed
+   * backend degrades rather than throwing.
+   */
+  capabilities?: Record<string, CatalogCapability>;
+}
+
+/** One thing a catalog can or cannot answer, with the reason when it cannot. */
+export interface CatalogCapability {
+  label: string;
+  available: boolean;
+  reason: string | null;
+}
+
+/**
+ * The capabilities a finding depends on, so an absent panel can name the reason.
+ * An empty finding is ambiguous on its own — "no column path" could mean the
+ * fault did not travel through a column, or that the catalog has no column
+ * lineage to read.
+ */
+export const CAPABILITY_KEYS = {
+  columnLineage: "column_lineage",
+  transformSql: "transform_sql",
+  faultOnset: "fault_onset",
+  alertingStatus: "alerting_status",
+  priorDossiers: "prior_dossiers",
+  writeback: "writeback",
+} as const;
+
+/** The reason a capability is unavailable, or null when it is available. */
+export function capabilityGap(
+  health: Health | null,
+  key: string,
+): string | null {
+  const cap = health?.capabilities?.[key];
+  if (!cap || cap.available) return null;
+  return cap.reason ?? null;
 }
 
 /** Deep link to an asset in the DataHub UI, so a finding can be checked. */

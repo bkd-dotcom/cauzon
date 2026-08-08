@@ -19,8 +19,17 @@ See `live_source.py` for exactly which fields are real and which are declared.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Optional
 
+from .models import (
+    CAP_COLUMN_LINEAGE,
+    CAP_FAULT_ONSET,
+    CAP_PRIOR_DOSSIERS,
+    CAP_TRANSFORM_SQL,
+    CAP_WRITEBACK,
+    Capabilities,
+)
 from .live_source import (
     DECLARED_GRAPH,
     SocrataCatalog,
@@ -30,12 +39,49 @@ from .live_source import (
 )
 
 
+def _published_at(epoch: Optional[float]) -> Optional[str]:
+    """Socrata's last-publication time, formatted the way the timeline reads.
+
+    Matches the mock's `"Aug 6, 07:00"` shape so the timeline renders identically
+    whichever catalog it came from.
+    """
+    if not isinstance(epoch, (int, float)):
+        return None
+    return time.strftime("%b %-d, %H:%M", time.localtime(epoch))
+
+
 class LiveDataHubClient:
     """Real assets, real freshness, declared lineage."""
 
     # The agent never consults this; the API layer does, to avoid offering a
     # write-back button against a catalog nobody can write to.
     supports_writeback = False
+
+    # Socrata is a publishing platform, not a metadata catalog: it exposes datasets
+    # and their update times and nothing about how they derive from each other. Each
+    # of these is a real limit of the source, stated so an empty finding is not read
+    # as "there is nothing to report".
+    capabilities = Capabilities(
+        unavailable={
+            CAP_COLUMN_LINEAGE: (
+                "Socrata publishes no column-level lineage, so a proof here holds at "
+                "dataset level and says nothing about which field."
+            ),
+            CAP_TRANSFORM_SQL: (
+                "Socrata retains no query history, so findings land on PATH_ONLY "
+                "rather than claiming a transform they cannot show."
+            ),
+            CAP_FAULT_ONSET: (
+                "Only the last publication time is available, not when a dataset "
+                "first went stale, so the timeline has no origin event."
+            ),
+            CAP_PRIOR_DOSSIERS: (
+                "Read-only source with no document store, so no earlier dossier can "
+                "be read back — this is not evidence that the asset has no history."
+            ),
+            CAP_WRITEBACK: "Read-only source; nothing can be filed back.",
+        }
+    )
 
     def __init__(self, catalog: Optional[SocrataCatalog] = None) -> None:
         self._catalog = catalog or SocrataCatalog()
@@ -116,6 +162,10 @@ class LiveDataHubClient:
             "source_url": asset["source_url"],
             "declared_note": asset["declared_note"],
             "queries": [],
+            # When Socrata last published this dataset is exactly when it was last
+            # rebuilt, so the timeline can order the propagation even though the
+            # fault's onset is unknowable here.
+            "last_transform_at": _published_at(asset.get("updated_at_epoch")),
         }
 
     def _downstreams_of(self, urn: str) -> list[str]:

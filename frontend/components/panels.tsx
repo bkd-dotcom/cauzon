@@ -18,6 +18,7 @@ import {
   type BlastRadius,
   type ConfidenceBreakdown,
   type Diagnosis,
+  type Health,
   type Phase,
   type ProofPath,
   type ProposedAssertion,
@@ -524,5 +525,45 @@ export function TimelinePanel({ events }: { events: TimelineEvent[] }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+
+/**
+ * What this catalog cannot answer, and why.
+ *
+ * Four post-verdict findings depend on metadata not every catalog holds. They used
+ * to come back empty on a real DataHub with no explanation, which reads as "there
+ * is nothing to report" — the opposite of what an absent finding means. The backend
+ * declares its own limits and this repeats them.
+ */
+export function CapabilityPanel({ health }: { health: Health | null }) {
+  const caps = health?.capabilities;
+  if (!caps) return null;
+  const gaps = Object.entries(caps).filter(([, c]) => !c.available);
+  if (!gaps.length) {
+    return (
+      <p className="prose-evidence m-0">
+        This catalog supports every finding Cauzon produces — nothing below is
+        degraded.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      <p className="prose-evidence m-0">
+        {gaps.length} finding{gaps.length === 1 ? "" : "s"} cannot be produced
+        against this catalog. Listed because an empty panel and an unanswerable
+        question look identical otherwise.
+      </p>
+      <dl className="m-0 space-y-0">
+        {gaps.map(([key, cap]) => (
+          <div key={key} className="rule py-3">
+            <dt className="label m-0">{cap.label}</dt>
+            <dd className="prose-evidence m-0 mt-1">{cap.reason}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
