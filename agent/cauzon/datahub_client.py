@@ -736,13 +736,25 @@ class MCPDataHubClient:
         incidents: list[dict[str, Any]] = []
         res = self._mt.search(query="*", num_results=25)
         entities = _first(res, "searchResults", "entities", "results", default=[]) or []
+
+        # A dataset with no assertion API response is not the same as a dataset with
+        # no failing assertions, and if *every* probe fails this method must not
+        # return an empty queue as though the catalog were healthy. One asset
+        # erroring is tolerable; all of them erroring means we could not ask.
+        probed = 0
+        failed = 0
+        last_error: Optional[Exception] = None
+
         for ent in entities:
             urn = _first(ent, "urn") or _first(_first(ent, "entity", default={}), "urn")
             if not urn or "dataset" not in urn:
                 continue
+            probed += 1
             try:
                 assertions = self._mt.get_dataset_assertions(urn=urn, status="FAILING")
-            except Exception:
+            except Exception as exc:
+                failed += 1
+                last_error = exc
                 continue
             items = _first(assertions, "assertions", "results", default=[]) or []
             for a in items:
@@ -755,6 +767,14 @@ class MCPDataHubClient:
                         "detected_at": _first(a, "lastEvaluatedAt", "latestResultTime"),
                     }
                 )
+
+        if probed and failed == probed:
+            raise RuntimeError(
+                f"Could not read assertions for any of {probed} datasets on "
+                f"{self.gms_url}. Reporting no open incidents here would claim the "
+                f"catalog is healthy when it was never successfully asked. "
+                f"Last error: {last_error!r}"
+            )
         return incidents
 
     def search(self, query: str) -> list[dict[str, Any]]:
