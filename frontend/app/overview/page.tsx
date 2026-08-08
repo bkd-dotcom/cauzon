@@ -13,7 +13,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import CatalogMap, { CatalogNodeDetail } from "@/components/CatalogMap";
-import { CorrelationPanel, Panel } from "@/components/panels";
+import { CorrelationPanel, LiveCheckPanel, Panel } from "@/components/panels";
 import ZoneMap from "@/components/ZoneMap";
 import {
   LIVE_CATALOG_AVAILABLE,
@@ -139,6 +139,20 @@ export default function OverviewPage() {
                 The investigation view still works.
               </Link>
             </p>
+          </Panel>
+        )}
+
+        {/* ---- proof the freshness signal is reading, not asserting -------
+            Live catalog only, and above everything else: it is the frame for the
+            queue below it. Every other asset here is years stale, which is what
+            makes them incidents and what would otherwise leave the signal
+            unfalsifiable. */}
+        {catalog === "live" && !failed && (
+          <Panel
+            title="Read live, right now"
+            aside={<span className="label">re-reads every 50s</span>}
+          >
+            <LiveCheckPanel apiBase={apiBaseFor("live")} />
           </Panel>
         )}
 

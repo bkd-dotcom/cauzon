@@ -49,6 +49,15 @@ definition 4.6x past its freshness SLA. A stale lookup table is stale geography,
 not just a stale row count, and the map is what makes that a number rather than a
 turn of phrase.
 
+## A control that proves the signal reads
+
+The live catalog's assets are years stale, which is what makes them incidents — and
+what would otherwise make the freshness check unfalsifiable. So it also carries NYC
+DOT Traffic Speeds, a live sensor feed that republishes about every four minutes.
+Watched for six minutes, its age read 2 → 4 → 1 → 1 → 2 → 3 → 4 minutes: climbing,
+then resetting each time it publishes. The signal has to discriminate rather than
+always fire, and if that feed ever stalls it turns oxide like the rest.
+
 ## One cause, several alerts
 
 When an upstream asset fails, every team downstream opens their own incident on

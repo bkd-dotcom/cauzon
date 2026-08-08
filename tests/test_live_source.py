@@ -246,3 +246,108 @@ def test_unknown_urn_resolves_to_nothing():
 )
 def test_ages_are_reported_in_units_a_human_reads(hours, expected):
     assert humanise_age(hours) == expected
+
+
+# --------------------------------------------------------------------------- #
+# The liveness probe
+# --------------------------------------------------------------------------- #
+def test_probe_reports_a_fresh_asset_as_healthy():
+    from cauzon.live_source import DECLARED_GRAPH, LIVE_PROBE_ID, LivenessProbe
+
+    now = 1_800_000_000.0
+    sla = DECLARED_GRAPH[LIVE_PROBE_ID]["expected_freshness_hours"]
+
+    probe = LivenessProbe(
+        # Four minutes old, which is this feed's real cadence.
+        fetch=lambda ids: {ids[0]: {"name": "DOT Traffic Speeds", "updated_at": now - 240}},
+        now=lambda: now,
+    )
+    reading = probe.read()
+
+    assert reading["healthy"] is True
+    assert reading["age_label"] == "4 min", "minutes matter here; 0h proves nothing"
+    assert reading["age_hours"] < sla
+    assert reading["stale"] is False
+
+
+def test_probe_reports_a_stalled_feed_as_past_sla():
+    """The control has to be falsifiable: if the feed stops, it must say so."""
+    from cauzon.live_source import LivenessProbe
+
+    now = 1_800_000_000.0
+    probe = LivenessProbe(
+        fetch=lambda ids: {ids[0]: {"name": "x", "updated_at": now - 3600 * 9}},
+        now=lambda: now,
+    )
+    assert probe.read()["healthy"] is False
+
+
+def test_probe_ttl_is_short_enough_to_show_movement():
+    """A 15-minute cache would show the same number to anyone who reloaded.
+
+    The whole claim this supports is that the age changes, so the probe cannot
+    inherit the catalog's TTL.
+    """
+    from cauzon.live_source import _CACHE_TTL_S, LivenessProbe
+
+    probe = LivenessProbe()
+    assert probe._ttl_s <= 60
+    assert probe._ttl_s < _CACHE_TTL_S
+
+
+def test_probe_refetches_once_its_ttl_expires():
+    from cauzon.live_source import LivenessProbe
+
+    clock = {"t": 1_000.0}
+    calls = {"n": 0}
+
+    def counted(ids):
+        calls["n"] += 1
+        return {ids[0]: {"name": "x", "updated_at": clock["t"] - 120}}
+
+    probe = LivenessProbe(fetch=counted, ttl_s=45, now=lambda: clock["t"])
+    probe.read()
+    probe.read()
+    assert calls["n"] == 1, "within the TTL it must not refetch"
+
+    clock["t"] += 50
+    probe.read()
+    assert calls["n"] == 2
+
+
+def test_a_failed_probe_reuses_the_last_reading_and_flags_it():
+    """Better a lower bound that says so than a confident number from nowhere."""
+    from cauzon.live_source import LivenessProbe
+
+    clock = {"t": 1_000.0}
+    calls = {"n": 0}
+
+    def flaky(ids):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {ids[0]: {"name": "x", "updated_at": clock["t"] - 60}}
+        raise TimeoutError("socrata slow")
+
+    probe = LivenessProbe(fetch=flaky, ttl_s=10, now=lambda: clock["t"])
+    first = probe.read()
+    assert first["stale"] is False
+
+    clock["t"] += 30
+    again = probe.read()
+    assert again["stale"] is True
+    assert "TimeoutError" in again["error"]
+    assert again["age_label"] == first["age_label"]
+
+
+def test_the_live_catalog_now_contains_both_fresh_and_stale_assets():
+    """The point of adding these: a signal that always fires is unfalsifiable.
+
+    With every asset overdue there was nothing to show the freshness check reads a
+    real clock. The catalog now has to discriminate.
+    """
+    from cauzon.live_source import DECLARED_GRAPH
+
+    tight = [d for d in DECLARED_GRAPH.values() if d["expected_freshness_hours"] <= 24]
+    loose = [d for d in DECLARED_GRAPH.values() if d["expected_freshness_hours"] > 24 * 300]
+    assert tight, "no high-frequency asset declared"
+    assert loose, "no long-horizon asset declared"

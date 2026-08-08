@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,7 @@ from cauzon.datahub_client import (  # noqa: E402
     scenario_for_symptom,
 )
 from cauzon.live_client import LiveDataHubClient  # noqa: E402
+from cauzon.live_source import LivenessProbe  # noqa: E402
 from cauzon.models import Capabilities, Incident, TraceEvent  # noqa: E402
 from cauzon.overview import (  # noqa: E402
     CatalogMap,
@@ -252,6 +254,32 @@ def catalog() -> dict[str, Any]:
 # requests. The aggregation takes a few seconds; doing it per request would make
 # the map feel broken.
 _zone_volume = ZoneVolume()
+
+
+# Its own short TTL, deliberately not the catalog's 15 minutes — see LivenessProbe.
+_probe = LivenessProbe()
+
+
+@app.get("/api/live-check")
+def live_check() -> dict[str, Any]:
+    """How long ago the live feed actually published, read fresh.
+
+    The rest of the live catalog is years stale, which makes the point about
+    incidents and leaves an obvious objection: if everything is overdue, how would
+    anyone know the freshness signal reads a real clock rather than always firing?
+
+    This answers it with one asset that genuinely moves. Reload and the number
+    changes; it is not a cached figure from the page build.
+    """
+    if not _using_live():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "The liveness check reads NYC Open Data directly, so it is only "
+                "available on the live catalog backend."
+            ),
+        )
+    return {**_probe.read(), "checked_at_epoch": time.time()}
 
 
 @app.get("/api/zones")

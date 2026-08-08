@@ -446,3 +446,27 @@ export interface Correlation {
   grounding: GroundingLevel;
   grounding_label: string;
 }
+
+
+/**
+ * One live asset's publication time, read fresh on every poll.
+ *
+ * The rest of the live catalog is years stale, which is the point — but if
+ * everything is overdue, nothing demonstrates that the freshness signal reads a
+ * real clock rather than always firing. This asset updates every few minutes, so
+ * the number visibly changes.
+ */
+export interface LiveCheck {
+  dataset_id: string;
+  name: string | null;
+  published_at_epoch: number | null;
+  age_hours: number | null;
+  age_label: string;
+  expected_freshness_hours: number | null;
+  healthy: boolean;
+  source_url: string;
+  /** True when the fetch failed and this is a reused or empty reading. */
+  stale: boolean;
+  error?: string;
+  checked_at_epoch?: number;
+}

@@ -10,6 +10,7 @@
  */
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import {
   PHASE_LABELS,
@@ -22,6 +23,7 @@ import {
   type Correlation,
   type Diagnosis,
   type Health,
+  type LiveCheck,
   type Phase,
   type ProofPath,
   type ProposedAssertion,
@@ -649,6 +651,100 @@ export function CorrelationPanel({
           {correlation.cause_name} but could not be proven to originate there, so
           {correlation.unexplained.length === 1 ? " it is" : " they are"} left out
           of this group rather than assumed into it.
+        </p>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * Proof that the freshness signal is reading, not asserting.
+ *
+ * Every other asset in the live catalog is years stale, which makes the argument
+ * about incidents and invites the obvious objection: a signal that always fires is
+ * indistinguishable from one that is not looking. This polls one genuinely live
+ * feed — NYC DOT's traffic sensors, which republish every few minutes — so the age
+ * shown here moves while the page is open.
+ */
+export function LiveCheckPanel({ apiBase }: { apiBase: string }) {
+  const [check, setCheck] = useState<LiveCheck | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [polls, setPolls] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const read = async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/live-check`);
+        if (!res.ok) throw new Error(String(res.status));
+        const data: LiveCheck = await res.json();
+        if (!cancelled) {
+          setCheck(data);
+          setPolls((n) => n + 1);
+        }
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    };
+    void read();
+    // Just inside the probe's own 45s TTL, so each poll is a real read rather than
+    // the same cached number shown twice.
+    const timer = setInterval(read, 50_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [apiBase]);
+
+  if (failed) {
+    return (
+      <p className="prose-evidence m-0">
+        The liveness check could not reach NYC Open Data. Saying so is more useful
+        than showing a number that might be from any point in the past.
+      </p>
+    );
+  }
+  if (!check) {
+    return <p className="prose-evidence m-0">Reading the live feed…</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
+        <span
+          className={`text-2xl font-semibold tracking-tight ${
+            check.healthy ? "text-jade" : "text-oxide"
+          }`}
+        >
+          {check.age_label}
+        </span>
+        <span className="label">since it last published</span>
+        <span className="label ml-auto">
+          {check.healthy ? "within SLA" : "past SLA"}
+          {polls > 1 ? ` · re-read ${polls}×` : ""}
+        </span>
+      </div>
+
+      <p className="prose-evidence m-0">
+        <a
+          href={check.source_url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-bone-dim underline decoration-line-bright hover:text-jade"
+        >
+          {check.name}
+        </a>{" "}
+        is a live sensor feed that republishes every few minutes. Every other asset
+        in this catalog is years stale — which is what makes them incidents, and
+        what would otherwise leave the freshness signal unfalsifiable. This one is
+        the control: it stays healthy, and the number above changes while you watch.
+      </p>
+
+      {check.stale && (
+        <p className="prose-evidence m-0 text-oxide">
+          This reading is a reused one — the last refresh failed, so treat the age
+          as a lower bound.
         </p>
       )}
     </div>

@@ -119,7 +119,55 @@ DECLARED_GRAPH: dict[str, dict[str, Any]] = {
         "expected_freshness_hours": 24 * 365,
         "owner": "tlc-data@nyc.gov",
     },
+    # ---------------------------------------------------------------------- #
+    # Genuinely live assets.
+    #
+    # Everything above is years stale, which makes the point about incidents but
+    # leaves an obvious objection: if every asset is overdue, how would anyone know
+    # the freshness signal reads a real timestamp rather than always firing?
+    #
+    # These three are fresh right now and stay fresh. The first updates roughly
+    # every four minutes — measured, by polling `data_updated_at` and watching it
+    # advance from 16:45:51 to 16:49:45 — so its age visibly changes between
+    # refreshes. It is the asset that proves the signal is reading rather than
+    # asserting, and that it *discriminates*: healthy here, overdue above.
+    #
+    # Declared with no lineage, deliberately. The traffic feed carries its own
+    # geometry inline and no NYC dataset derives from it, so an edge here would be
+    # invented — which is the one thing this project cannot do.
+    # ---------------------------------------------------------------------- #
+    "i4gi-tjb9": {
+        "label": "DOT Traffic Speeds (live)",
+        "upstreams": [],
+        # Generous against a ~4-minute cadence: this asset should read healthy
+        # unless the feed genuinely stops, which is what makes it a control.
+        "expected_freshness_hours": 2,
+        "owner": "dot-its@nyc.gov",
+        "note": "Real-time sensor feed. Updates every few minutes; its own geometry is inline, so it has no upstream to declare.",
+        "live_probe": True,
+    },
+    "eabe-havv": {
+        "label": "DOB Complaints Received",
+        "upstreams": [],
+        "expected_freshness_hours": 24,
+        "owner": "dob-data@nyc.gov",
+        "note": "Refreshed through the working day.",
+    },
+    "n6c5-95xh": {
+        "label": "LinkNYC Kiosk Status",
+        "upstreams": [],
+        "expected_freshness_hours": 24,
+        "owner": "linknyc-ops@nyc.gov",
+        "note": "Kiosk health, refreshed continuously.",
+    },
 }
+
+
+# The asset whose age is quoted as proof the freshness signal is live. Read off the
+# graph rather than restated, so the two cannot disagree.
+LIVE_PROBE_ID: str = next(
+    (i for i, d in DECLARED_GRAPH.items() if d.get("live_probe")), "i4gi-tjb9"
+)
 
 
 class SocrataCatalog:
@@ -187,6 +235,77 @@ class SocrataCatalog:
         }
 
 
+class LivenessProbe:
+    """One dataset's publication time, re-read often enough to watch it move.
+
+    Separate from `SocrataCatalog` on purpose. That cache is 15 minutes, which is
+    right for reading a whole graph and exactly wrong here: the claim this supports
+    is "the freshness signal reads a real clock", and a 15-minute cache would show
+    the same number to anyone who reloaded inside the window, which proves nothing.
+
+    One field from one dataset, so a 45-second TTL is a trivial amount of traffic.
+    """
+
+    def __init__(
+        self,
+        dataset_id: str = LIVE_PROBE_ID,
+        fetch: Optional[Any] = None,
+        ttl_s: int = 45,
+        now: Optional[Any] = None,
+    ) -> None:
+        self.dataset_id = dataset_id
+        self._fetch = fetch or _fetch_catalog
+        self._ttl_s = ttl_s
+        self._now = now or time.time
+        self._cache: Optional[dict[str, Any]] = None
+        self._cached_at = 0.0
+        self.last_error: Optional[str] = None
+
+    def read(self) -> dict[str, Any]:
+        age = self._now() - self._cached_at
+        if self._cache is not None and age < self._ttl_s:
+            return {**self._cache, "cache_age_s": round(age, 1)}
+
+        try:
+            raw = self._fetch([self.dataset_id])
+            self.last_error = None
+        except Exception as exc:
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            if self._cache is not None:
+                return {**self._cache, "stale": True, "error": self.last_error}
+            return {
+                "dataset_id": self.dataset_id,
+                "published_at": None,
+                "age_hours": None,
+                "stale": True,
+                "error": self.last_error,
+            }
+
+        meta = raw.get(self.dataset_id, {})
+        updated = meta.get("updated_at")
+        hours = None
+        if isinstance(updated, (int, float)):
+            hours = max(0.0, (self._now() - updated) / 3600.0)
+
+        declared = DECLARED_GRAPH.get(self.dataset_id, {})
+        self._cache = {
+            "dataset_id": self.dataset_id,
+            "name": meta.get("name") or declared.get("label"),
+            "published_at_epoch": updated,
+            "age_hours": round(hours, 4) if hours is not None else None,
+            "age_label": humanise_age(hours),
+            "expected_freshness_hours": declared.get("expected_freshness_hours"),
+            "healthy": (
+                hours is not None
+                and hours <= (declared.get("expected_freshness_hours") or 0)
+            ),
+            "source_url": f"https://{SOCRATA_DOMAIN}/d/{self.dataset_id}",
+            "stale": False,
+        }
+        self._cached_at = self._now()
+        return {**self._cache, "cache_age_s": 0.0}
+
+
 def _fetch_catalog(dataset_ids: list[str]) -> dict[str, dict[str, Any]]:
     """One catalog call per id set, returning only the fields we use.
 
@@ -243,6 +362,12 @@ def _int(value: Any) -> Optional[int]:
 def humanise_age(hours: Optional[float]) -> str:
     if hours is None:
         return "unknown"
+    # Minutes below the hour. The live traffic feed refreshes every few minutes, and
+    # rounding that to "0h" would throw away the one number that demonstrates the
+    # freshness signal is reading a real timestamp rather than asserting one.
+    if hours < 1:
+        minutes = max(1, round(hours * 60))
+        return f"{minutes} min"
     if hours < 48:
         return f"{hours:.0f}h"
     days = hours / 24

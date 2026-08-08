@@ -110,7 +110,7 @@ Being exact about which half is real, since that is the whole argument:
 | | Live catalog |
 | --- | --- |
 | Assets, names, columns | real, fetched from Socrata |
-| Freshness | real — `updatedAt` recomputed against the clock each refresh |
+| Freshness | real — `updatedAt` recomputed against the clock each refresh, and it moves: see below |
 | Lineage | **declared by this project.** Socrata publishes none; this is what every DataHub ingestion connector asserts, but it is ours and the UI says so |
 | Transform SQL | unavailable — no query history exists, so findings land on `PATH_ONLY` rather than claiming more |
 | Write-back | unavailable — read-only source, so the UI hides the toggle instead of offering one that does nothing |
@@ -118,8 +118,34 @@ Being exact about which half is real, since that is the whole argument:
 The declared edges are not arbitrary: TLC trip datasets reference the Taxi Zone
 lookup for `PULocationID` / `DOLocationID`. Datasets with no such dependency are
 declared with none — which is what lets the proof gate do real work here. A
-genuinely 2.6-year-stale dataset ranks near the top and is still not blamed on
+genuinely years-stale dataset ranks near the top and is still not blamed on
 anything, because nothing connects it to a symptom.
+
+### The control: a feed that is genuinely live
+
+Every asset above being stale is what makes them incidents — and it leaves one
+obvious objection. If the freshness check fires on everything, how would anyone
+know it reads a real clock rather than always firing?
+
+So the catalog also carries **NYC DOT Traffic Speeds**, a live sensor feed. It
+republishes roughly every four minutes: measured, by polling `data_updated_at` and
+watching it advance from `16:45:51` to `16:49:45`. `/api/live-check` reads it on a
+45-second TTL — separate from the catalog's 15-minute cache, because a cached number
+shown twice would prove nothing — and the overview page displays its age.
+
+Watched for six minutes in a browser, that number read **2 → 4 → 1 → 1 → 2 → 3 → 4
+minutes**: climbing, then resetting each time the feed publishes. Alongside it,
+`DOB Complaints Received` and `LinkNYC Kiosk Status` also sit comfortably inside
+their SLAs.
+
+The point is not that the feed is impressive. It is that the signal now has to
+**discriminate** — healthy here, years overdue above — instead of being
+unfalsifiable. And it stays falsifiable: if the feed ever stalls, that asset turns
+oxide like the rest.
+
+The traffic feed is declared with no lineage on purpose. It carries its own geometry
+inline and no NYC dataset derives from it, so an edge there would be invented, which
+is the one thing this project cannot do.
 
 ## Beyond the cause
 
@@ -393,7 +419,7 @@ checked against the fixture rather than taken on the agent's word.
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 178 tests
+pytest -q          # 190 tests
 ```
 
 The suite is deliberately adversarial about the central claim: a hostile narrator
