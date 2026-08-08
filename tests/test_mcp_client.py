@@ -6,9 +6,11 @@ transcript from an older build. The gap mattered: this layer's whole job is
 normalising response shapes that vary between DataHub's GraphQL and REST paths,
 which is exactly the kind of code that fails silently on a shape it did not expect.
 
-Nothing here touches a network. The client is constructed with its SDK imports
-stubbed, then handed a fake `mcp_tools` module, so every branch is reachable
-without an instance to point at.
+Nothing here touches a network *or* an optional dependency. The client is
+constructed with its SDK imports bypassed and handed a fake `mcp_tools` module, and
+the two tests that reach the aspect walker stub the `datahub` module they would
+otherwise import — CI installs only the base package, so a test that quietly needed
+the `datahub` extra passed locally and failed there.
 """
 
 import sys
@@ -61,6 +63,28 @@ def _client(**overrides) -> MCPDataHubClient:
     client._client = object()
     client._writes = []
     return client
+
+
+@pytest.fixture
+def stub_lineage_aspect(monkeypatch):
+    """Make `datahub.metadata.schema_classes` importable without the real SDK.
+
+    `_walk_upstream_aspects` imports it to name the aspect class it asks the graph
+    for. The BFS under test does not care what that class is — only that the graph
+    is keyed by it — so a stub keeps these tests running where the optional
+    `datahub` extra is not installed, which is how CI is configured.
+    """
+    import sys
+    import types
+
+    module = types.ModuleType("datahub.metadata.schema_classes")
+    module.UpstreamLineageClass = type("UpstreamLineageClass", (), {})
+    parent = types.ModuleType("datahub")
+    metadata = types.ModuleType("datahub.metadata")
+    monkeypatch.setitem(sys.modules, "datahub", parent)
+    monkeypatch.setitem(sys.modules, "datahub.metadata", metadata)
+    monkeypatch.setitem(sys.modules, "datahub.metadata.schema_classes", module)
+    return module.UpstreamLineageClass
 
 
 # --------------------------------------------------------------------------- #
@@ -279,7 +303,7 @@ def test_lineage_paths_between_degrades_to_empty_rather_than_raising():
     assert client.get_lineage_paths_between(CAUSE, SYMPTOM) == []
 
 
-def test_upstream_aspect_walk_is_bounded_by_hops():
+def test_upstream_aspect_walk_is_bounded_by_hops(stub_lineage_aspect):
     """A chain longer than the hop limit must be truncated, not followed to the end."""
 
     class Upstream:
@@ -308,7 +332,7 @@ def test_upstream_aspect_walk_is_bounded_by_hops():
     assert {n["urn"] for n in walked} == {"urn:d1", "urn:d2"}
 
 
-def test_upstream_aspect_walk_does_not_revisit_a_cycle():
+def test_upstream_aspect_walk_does_not_revisit_a_cycle(stub_lineage_aspect):
     class Upstream:
         def __init__(self, dataset):
             self.dataset = dataset
