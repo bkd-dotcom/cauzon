@@ -354,6 +354,95 @@ _SCENARIO_FANOUT = {
     },
 }
 
+# --------------------------------------------------------------------------- #
+#   "shared_cause" — one broken upstream, two separate alerts.
+#
+#       currency_rates -> billing_facts   -> finance_dashboard
+#                      -> usage_rollup    -> ops_dashboard
+#
+#   Fault: the FX rate feed stalled. Two teams each open their own incident on
+#   their own asset, neither knowing they are the same outage. This is the case
+#   single-incident RCA answers three times and correlation answers once — and the
+#   only fixture where an *upstream* carries its own open incident, which is what
+#   the UPSTREAM_INCIDENT signal exists to catch.
+# --------------------------------------------------------------------------- #
+_SCENARIO_SHARED_CAUSE = {
+    "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)": {
+        "name": "currency_rates",
+        "fault_began_at": "Aug 6, 02:15",
+        "upstreams": [],
+        "owner": "treasury-eng@example.com",
+        "freshness_hours": 39,
+        "expected_freshness_hours": 6,
+        "schema_changed_recently": False,
+        "row_count_delta_pct": -100.0,
+        # Treasury noticed their own feed too, so this asset is itself alerting.
+        "has_open_incident": True,
+        "incident_note": "The FX rate feed has its own failing freshness check.",
+        "queries": [
+            {"query": "COPY INTO currency_rates FROM @fx_stage/daily/", "last_run": "2 days ago"}
+        ],
+    },
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)": {
+        "name": "billing_facts",
+        "last_transform_at": "Aug 7, 04:00",
+        "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)"],
+        "owner": "billing-eng@example.com",
+        "freshness_hours": 8,
+        "expected_freshness_hours": 24,
+        "schema_changed_recently": False,
+        "row_count_delta_pct": -31.0,
+        "has_open_incident": True,
+        "queries": [
+            {
+                "query": "CREATE OR REPLACE TABLE billing_facts AS "
+                "SELECT i.id, i.amount * r.rate AS amount_usd "
+                "FROM invoices i JOIN currency_rates r ON i.ccy = r.ccy",
+                "last_run": "6 hours ago",
+            }
+        ],
+    },
+    "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)": {
+        "name": "usage_rollup",
+        "last_transform_at": "Aug 7, 04:20",
+        "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)"],
+        "owner": "platform-ops@example.com",
+        "freshness_hours": 7,
+        "expected_freshness_hours": 24,
+        "schema_changed_recently": False,
+        "row_count_delta_pct": -28.0,
+        "has_open_incident": True,
+        "queries": [
+            {
+                "query": "CREATE OR REPLACE TABLE usage_rollup AS "
+                "SELECT account, SUM(units * r.rate) AS spend_usd "
+                "FROM usage u JOIN currency_rates r ON u.ccy = r.ccy GROUP BY account",
+                "last_run": "5 hours ago",
+            }
+        ],
+    },
+    "urn:li:dataset:(urn:li:dataPlatform:looker,fin.finance_dashboard,PROD)": {
+        "name": "finance_dashboard",
+        "owner": "cfo-office@example.com",
+        "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)"],
+        "freshness_hours": 8,
+        "expected_freshness_hours": 24,
+        "schema_changed_recently": False,
+        "row_count_delta_pct": -31.0,
+        "queries": [],
+    },
+    "urn:li:dataset:(urn:li:dataPlatform:looker,fin.ops_dashboard,PROD)": {
+        "name": "ops_dashboard",
+        "owner": "platform-ops@example.com",
+        "upstreams": ["urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)"],
+        "freshness_hours": 7,
+        "expected_freshness_hours": 24,
+        "schema_changed_recently": False,
+        "row_count_delta_pct": -28.0,
+        "queries": [],
+    },
+}
+
 _SCENARIOS: dict[str, tuple[dict, str, dict]] = {
     # name -> (graph, symptom_urn, incident_dict)
     "freshness": (
@@ -395,6 +484,34 @@ _SCENARIOS: dict[str, tuple[dict, str, dict]] = {
             ),
             "failed_assertion": "session_metrics.sessions within 25% of 7-day average",
             "detected_at": "today 07:41",
+        },
+    ),
+    # Two entries over one graph: two teams alerting separately on the same
+    # outage. Correlation has to notice they share `currency_rates`.
+    "shared_cause": (
+        _SCENARIO_SHARED_CAUSE,
+        "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)",
+        {
+            "title": "billing_facts USD amounts dropped 31% overnight",
+            "description": (
+                "Invoiced totals in USD fell sharply with no change in invoice "
+                "count, so the conversion rather than the volume looks wrong."
+            ),
+            "failed_assertion": "billing_facts.amount_usd within 10% of 7-day average",
+            "detected_at": "today 06:20",
+        },
+    ),
+    "shared_cause_ops": (
+        _SCENARIO_SHARED_CAUSE,
+        "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)",
+        {
+            "title": "usage_rollup spend is 28% below forecast",
+            "description": (
+                "Metered spend came in well under forecast across every account, "
+                "which platform-ops raised as a separate incident."
+            ),
+            "failed_assertion": "usage_rollup.spend_usd within 15% of forecast",
+            "detected_at": "today 06:44",
         },
     ),
 }
@@ -454,7 +571,15 @@ class MockDataHubClient:
 
     # ---- reads ----------------------------------------------------------- #
     def list_open_incidents(self) -> list[dict[str, Any]]:
-        return [
+        """The scenario's own symptom, plus any other asset with a failing check.
+
+        The queue is the single source of truth for "what is alerting" — the agent
+        derives both the blast radius' alerting status and the UPSTREAM_INCIDENT
+        signal from it. So an asset the fixture marks `has_open_incident` has to
+        appear here; a flag the queue does not reflect is a fixture that disagrees
+        with itself.
+        """
+        incidents = [
             {
                 "urn": self._symptom_urn,
                 "title": self._incident["title"],
@@ -463,6 +588,20 @@ class MockDataHubClient:
                 "detected_at": self._incident.get("detected_at"),
             }
         ]
+        for urn, node in self._graph.items():
+            if urn == self._symptom_urn or not node.get("has_open_incident"):
+                continue
+            incidents.append(
+                {
+                    "urn": urn,
+                    "title": f"{node['name']} has its own failing check",
+                    "description": node.get("incident_note")
+                    or f"A data-quality assertion on {node['name']} is failing.",
+                    "failed_assertion": node.get("incident_note"),
+                    "detected_at": node.get("fault_began_at"),
+                }
+            )
+        return incidents
 
     def search(self, query: str) -> list[dict[str, Any]]:
         q = query.lower()
@@ -613,9 +752,17 @@ def all_mock_incidents() -> list[dict[str, Any]]:
     tests. An API serving a UI wants the whole queue, so a reviewer can try each
     fault type without restarting anything.
     """
-    return [
-        MockDataHubClient(scenario=name).list_open_incidents()[0] for name in _SCENARIOS
-    ]
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for name in _SCENARIOS:
+        for incident in MockDataHubClient(scenario=name).list_open_incidents():
+            # Two scenarios share the shared_cause graph, and its assets alert in
+            # more than one of them, so the queue would otherwise repeat itself.
+            if incident["urn"] in seen:
+                continue
+            seen.add(incident["urn"])
+            out.append(incident)
+    return out
 
 
 def scenario_for_symptom(urn: str) -> Optional[str]:

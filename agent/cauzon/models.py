@@ -23,8 +23,6 @@ class Signal(str, Enum):
     SCHEMA_CHANGE = "schema_change"
     VOLUME_ANOMALY = "volume_anomaly"
     ROW_FANOUT = "row_fanout"
-    FAILED_ASSERTION = "failed_assertion"
-    RECENT_QUERY_CHANGE = "recent_query_change"
     UPSTREAM_INCIDENT = "upstream_incident"
 
 

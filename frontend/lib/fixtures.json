@@ -1218,5 +1218,607 @@
         }
       ]
     }
+  },
+  "shared_cause": {
+    "incident": {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)",
+      "title": "billing_facts USD amounts dropped 31% overnight",
+      "description": "Invoiced totals in USD fell sharply with no change in invoice count, so the conversion rather than the volume looks wrong.",
+      "failed_assertion": "billing_facts.amount_usd within 10% of 7-day average",
+      "detected_at": "today 06:20"
+    },
+    "result": {
+      "incident": {
+        "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)",
+        "title": "billing_facts USD amounts dropped 31% overnight",
+        "description": "Invoiced totals in USD fell sharply with no change in invoice count, so the conversion rather than the volume looks wrong.",
+        "failed_assertion": "billing_facts.amount_usd within 10% of 7-day average",
+        "detected_at": "today 06:20"
+      },
+      "root_cause": {
+        "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+        "name": "currency_rates",
+        "hops_from_symptom": 1,
+        "signals": [
+          "freshness_lag",
+          "volume_anomaly",
+          "upstream_incident"
+        ],
+        "score": 7.5,
+        "evidence_notes": [
+          "Freshness 39h exceeds the 6h SLA (+33h stale).",
+          "Row count changed -100% vs baseline.",
+          "The FX rate feed has its own failing freshness check.",
+          "No upstream shows this fault \u2014 the fault appears to originate here."
+        ],
+        "is_origin": true,
+        "rejected_reason": null,
+        "owner": "treasury-eng@example.com"
+      },
+      "proof_path": {
+        "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)",
+        "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+        "nodes": [
+          "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+          "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)"
+        ],
+        "edges": [
+          {
+            "from": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+            "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)",
+            "via_query": "CREATE OR REPLACE TABLE billing_facts AS SELECT i.id, i.amount * r.rate AS amount_usd FROM invoices i JOIN currency_rates r ON i.ccy = r.ccy"
+          }
+        ],
+        "transform_sql": "CREATE OR REPLACE TABLE billing_facts AS SELECT i.id, i.amount * r.rate AS amount_usd FROM invoices i JOIN currency_rates r ON i.ccy = r.ccy",
+        "causal_edge_index": 0,
+        "grounding": "path_and_transform",
+        "grounding_label": "Path + transform proven",
+        "verified": true,
+        "column_path": null
+      },
+      "ranked_candidates": [
+        {
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+          "name": "currency_rates",
+          "hops_from_symptom": 1,
+          "signals": [
+            "freshness_lag",
+            "volume_anomaly",
+            "upstream_incident"
+          ],
+          "score": 7.5,
+          "evidence_notes": [
+            "Freshness 39h exceeds the 6h SLA (+33h stale).",
+            "Row count changed -100% vs baseline.",
+            "The FX rate feed has its own failing freshness check.",
+            "No upstream shows this fault \u2014 the fault appears to originate here."
+          ],
+          "is_origin": true,
+          "rejected_reason": null,
+          "owner": "treasury-eng@example.com"
+        }
+      ],
+      "recommended_fix": {
+        "summary": "Restart the ingestion job feeding `currency_rates` and backfill the missing window; it is the upstream origin of the staleness. Owner: treasury-eng@example.com.",
+        "action_kind": "command",
+        "action": "# 1. backfill the stalled source\ndatahub ingest -c currency_rates.yml\n# 2. replay downstream, in dependency order\n#    fin.billing_facts",
+        "action_note": "Downstream assets only recover once fresh data lands, so replay them in lineage order after the backfill completes."
+      },
+      "confidence": 1.0,
+      "confidence_breakdown": {
+        "grounding_factor": 1.0,
+        "signal_factor": 1.0,
+        "origin_factor": 1.0,
+        "grounding_reason": "Lineage path and the transform that carried the fault were both reconstructed.",
+        "signal_reason": "3 independent signal(s) agree: freshness lag, volume anomaly, upstream incident.",
+        "origin_reason": "No upstream asset shows this fault, so it originates here.",
+        "total": 1.0
+      },
+      "grounding": "path_and_transform",
+      "grounding_label": "Path + transform proven",
+      "grounded": true,
+      "recurrence": {
+        "asset_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+        "prior": [],
+        "count": 0,
+        "is_recurring": false
+      },
+      "blast_radius": {
+        "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)",
+        "impacted": [
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,fin.finance_dashboard,PROD)",
+            "name": "finance_dashboard",
+            "hops_from_symptom": 1,
+            "kind": "dashboard",
+            "owner": "cfo-office@example.com",
+            "alerting": false
+          }
+        ],
+        "count": 1,
+        "silent_count": 1,
+        "alerting_count": 0,
+        "unknown_count": 0
+      },
+      "proposed_assertion": {
+        "target_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+        "target_name": "currency_rates",
+        "kind": "freshness",
+        "description": "`currency_rates` must receive new data at least every 24 hours.",
+        "definition": "-- Freshness assertion on currency_rates\nSELECT MAX(_ingested_at) AS latest\nFROM currency_rates\nHAVING MAX(_ingested_at) > CURRENT_TIMESTAMP - INTERVAL '24 hours';",
+        "rationale": "The assertion that fired was on `billing_facts`, which is where the fault surfaced. This one sits on `currency_rates`, where it started, so it fires before anything downstream is affected.",
+        "lead_time": "~33h earlier than the downstream alert"
+      },
+      "timeline": [
+        {
+          "at": "Aug 6, 02:15",
+          "asset_name": "currency_rates",
+          "label": "Freshness 39h exceeds the 6h SLA (+33h stale).",
+          "kind": "fault_origin"
+        },
+        {
+          "at": "Aug 7, 04:00",
+          "asset_name": "billing_facts",
+          "label": "Transform ran on data that was already bad",
+          "kind": "transform_ran"
+        },
+        {
+          "at": "today 06:20",
+          "asset_name": "billing_facts",
+          "label": "billing_facts.amount_usd within 10% of 7-day average",
+          "kind": "assertion_fired"
+        }
+      ],
+      "narrative": "`currency_rates` is the origin of this incident, and the fault reached the symptom along fin.currency_rates \u2192 fin.billing_facts. Path + transform proven at 100% confidence. Evidence: Freshness 39h exceeds the 6h SLA (+33h stale).",
+      "narrative_source": "template",
+      "trace": [
+        {
+          "phase": "detect",
+          "message": "Picked up incident: billing_facts USD amounts dropped 31% overnight",
+          "data": {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)",
+            "title": "billing_facts USD amounts dropped 31% overnight",
+            "description": "Invoiced totals in USD fell sharply with no change in invoice count, so the conversion rather than the volume looks wrong.",
+            "failed_assertion": "billing_facts.amount_usd within 10% of 7-day average",
+            "detected_at": "today 06:20"
+          }
+        },
+        {
+          "phase": "scope",
+          "message": "Pulled 1 upstream nodes within 3 hops.",
+          "data": {
+            "upstream": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+                "hops": 1,
+                "name": "currency_rates"
+              }
+            ],
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)"
+          }
+        },
+        {
+          "phase": "hypothesize",
+          "message": "Ranked 1 candidates; 1 carry evidence. Top: currency_rates",
+          "data": {
+            "candidates": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+                "name": "currency_rates",
+                "hops_from_symptom": 1,
+                "signals": [
+                  "freshness_lag",
+                  "volume_anomaly",
+                  "upstream_incident"
+                ],
+                "score": 7.5,
+                "evidence_notes": [
+                  "Freshness 39h exceeds the 6h SLA (+33h stale).",
+                  "Row count changed -100% vs baseline.",
+                  "The FX rate feed has its own failing freshness check.",
+                  "No upstream shows this fault \u2014 the fault appears to originate here."
+                ],
+                "is_origin": true,
+                "rejected_reason": null,
+                "owner": null
+              }
+            ]
+          }
+        },
+        {
+          "phase": "prove",
+          "message": "Verified path to currency_rates across 1 lineage edge(s) \u2014 transform that carried the fault captured.",
+          "data": {
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)",
+            "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+            "nodes": [
+              "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+              "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)"
+            ],
+            "edges": [
+              {
+                "from": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+                "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)",
+                "via_query": "CREATE OR REPLACE TABLE billing_facts AS SELECT i.id, i.amount * r.rate AS amount_usd FROM invoices i JOIN currency_rates r ON i.ccy = r.ccy"
+              }
+            ],
+            "transform_sql": "CREATE OR REPLACE TABLE billing_facts AS SELECT i.id, i.amount * r.rate AS amount_usd FROM invoices i JOIN currency_rates r ON i.ccy = r.ccy",
+            "causal_edge_index": 0,
+            "grounding": "path_and_transform",
+            "grounding_label": "Path + transform proven",
+            "verified": true,
+            "column_path": null
+          }
+        },
+        {
+          "phase": "scope",
+          "message": "1 downstream asset(s) inherit this data; 1 is affected without alerting.",
+          "data": {
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)",
+            "impacted": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,fin.finance_dashboard,PROD)",
+                "name": "finance_dashboard",
+                "hops_from_symptom": 1,
+                "kind": "dashboard",
+                "owner": "cfo-office@example.com",
+                "alerting": false
+              }
+            ],
+            "count": 1,
+            "silent_count": 1,
+            "alerting_count": 0,
+            "unknown_count": 0
+          }
+        },
+        {
+          "phase": "hypothesize",
+          "message": "No freshness assertion exists on `currency_rates`. Proposing one \u2014 it would have caught this at the source.",
+          "data": {
+            "target_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+            "target_name": "currency_rates",
+            "kind": "freshness",
+            "description": "`currency_rates` must receive new data at least every 24 hours.",
+            "definition": "-- Freshness assertion on currency_rates\nSELECT MAX(_ingested_at) AS latest\nFROM currency_rates\nHAVING MAX(_ingested_at) > CURRENT_TIMESTAMP - INTERVAL '24 hours';",
+            "rationale": "The assertion that fired was on `billing_facts`, which is where the fault surfaced. This one sits on `currency_rates`, where it started, so it fires before anything downstream is affected.",
+            "lead_time": "~33h earlier than the downstream alert"
+          }
+        },
+        {
+          "phase": "writeback",
+          "message": "Wrote incident dossier to DataHub and tagged `currency_rates` as root cause. The next person or agent inherits this knowledge.",
+          "data": {
+            "document_urn": "urn:li:document:(cauzon,[cauzon]-rca:-billing_facts-usd-amounts-dropped-31%-overnight)",
+            "tagged_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)"
+          }
+        }
+      ],
+      "write_backs": [
+        {
+          "op": "save_document",
+          "urn": "urn:li:document:(cauzon,[cauzon]-rca:-billing_facts-usd-amounts-dropped-31%-overnight)",
+          "title": "[Cauzon] RCA: billing_facts USD amounts dropped 31% overnight",
+          "related": [
+            "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.billing_facts,PROD)",
+            "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)"
+          ]
+        },
+        {
+          "op": "add_tags",
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+          "tags": [
+            "root-cause",
+            "cauzon-diagnosed",
+            "needs-assertion"
+          ]
+        },
+        {
+          "op": "update_description",
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+          "description": "\u26a0\ufe0f Cauzon identified this as the root cause of incident 'billing_facts USD amounts dropped 31% overnight' (Path + transform proven, 100% confidence). See dossier urn:li:document:(cauzon,[cauzon]-rca:-billing_facts-usd-amounts-dropped-31%-overnight)."
+        }
+      ]
+    }
+  },
+  "shared_cause_ops": {
+    "incident": {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)",
+      "title": "usage_rollup spend is 28% below forecast",
+      "description": "Metered spend came in well under forecast across every account, which platform-ops raised as a separate incident.",
+      "failed_assertion": "usage_rollup.spend_usd within 15% of forecast",
+      "detected_at": "today 06:44"
+    },
+    "result": {
+      "incident": {
+        "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)",
+        "title": "usage_rollup spend is 28% below forecast",
+        "description": "Metered spend came in well under forecast across every account, which platform-ops raised as a separate incident.",
+        "failed_assertion": "usage_rollup.spend_usd within 15% of forecast",
+        "detected_at": "today 06:44"
+      },
+      "root_cause": {
+        "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+        "name": "currency_rates",
+        "hops_from_symptom": 1,
+        "signals": [
+          "freshness_lag",
+          "volume_anomaly",
+          "upstream_incident"
+        ],
+        "score": 7.5,
+        "evidence_notes": [
+          "Freshness 39h exceeds the 6h SLA (+33h stale).",
+          "Row count changed -100% vs baseline.",
+          "The FX rate feed has its own failing freshness check.",
+          "No upstream shows this fault \u2014 the fault appears to originate here."
+        ],
+        "is_origin": true,
+        "rejected_reason": null,
+        "owner": "treasury-eng@example.com"
+      },
+      "proof_path": {
+        "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)",
+        "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+        "nodes": [
+          "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+          "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)"
+        ],
+        "edges": [
+          {
+            "from": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+            "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)",
+            "via_query": "CREATE OR REPLACE TABLE usage_rollup AS SELECT account, SUM(units * r.rate) AS spend_usd FROM usage u JOIN currency_rates r ON u.ccy = r.ccy GROUP BY account"
+          }
+        ],
+        "transform_sql": "CREATE OR REPLACE TABLE usage_rollup AS SELECT account, SUM(units * r.rate) AS spend_usd FROM usage u JOIN currency_rates r ON u.ccy = r.ccy GROUP BY account",
+        "causal_edge_index": 0,
+        "grounding": "path_and_transform",
+        "grounding_label": "Path + transform proven",
+        "verified": true,
+        "column_path": null
+      },
+      "ranked_candidates": [
+        {
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+          "name": "currency_rates",
+          "hops_from_symptom": 1,
+          "signals": [
+            "freshness_lag",
+            "volume_anomaly",
+            "upstream_incident"
+          ],
+          "score": 7.5,
+          "evidence_notes": [
+            "Freshness 39h exceeds the 6h SLA (+33h stale).",
+            "Row count changed -100% vs baseline.",
+            "The FX rate feed has its own failing freshness check.",
+            "No upstream shows this fault \u2014 the fault appears to originate here."
+          ],
+          "is_origin": true,
+          "rejected_reason": null,
+          "owner": "treasury-eng@example.com"
+        }
+      ],
+      "recommended_fix": {
+        "summary": "Restart the ingestion job feeding `currency_rates` and backfill the missing window; it is the upstream origin of the staleness. Owner: treasury-eng@example.com.",
+        "action_kind": "command",
+        "action": "# 1. backfill the stalled source\ndatahub ingest -c currency_rates.yml\n# 2. replay downstream, in dependency order\n#    fin.usage_rollup",
+        "action_note": "Downstream assets only recover once fresh data lands, so replay them in lineage order after the backfill completes."
+      },
+      "confidence": 1.0,
+      "confidence_breakdown": {
+        "grounding_factor": 1.0,
+        "signal_factor": 1.0,
+        "origin_factor": 1.0,
+        "grounding_reason": "Lineage path and the transform that carried the fault were both reconstructed.",
+        "signal_reason": "3 independent signal(s) agree: freshness lag, volume anomaly, upstream incident.",
+        "origin_reason": "No upstream asset shows this fault, so it originates here.",
+        "total": 1.0
+      },
+      "grounding": "path_and_transform",
+      "grounding_label": "Path + transform proven",
+      "grounded": true,
+      "recurrence": {
+        "asset_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+        "prior": [],
+        "count": 0,
+        "is_recurring": false
+      },
+      "blast_radius": {
+        "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)",
+        "impacted": [
+          {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,fin.ops_dashboard,PROD)",
+            "name": "ops_dashboard",
+            "hops_from_symptom": 1,
+            "kind": "dashboard",
+            "owner": "platform-ops@example.com",
+            "alerting": false
+          }
+        ],
+        "count": 1,
+        "silent_count": 1,
+        "alerting_count": 0,
+        "unknown_count": 0
+      },
+      "proposed_assertion": {
+        "target_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+        "target_name": "currency_rates",
+        "kind": "freshness",
+        "description": "`currency_rates` must receive new data at least every 24 hours.",
+        "definition": "-- Freshness assertion on currency_rates\nSELECT MAX(_ingested_at) AS latest\nFROM currency_rates\nHAVING MAX(_ingested_at) > CURRENT_TIMESTAMP - INTERVAL '24 hours';",
+        "rationale": "The assertion that fired was on `usage_rollup`, which is where the fault surfaced. This one sits on `currency_rates`, where it started, so it fires before anything downstream is affected.",
+        "lead_time": "~33h earlier than the downstream alert"
+      },
+      "timeline": [
+        {
+          "at": "Aug 6, 02:15",
+          "asset_name": "currency_rates",
+          "label": "Freshness 39h exceeds the 6h SLA (+33h stale).",
+          "kind": "fault_origin"
+        },
+        {
+          "at": "Aug 7, 04:20",
+          "asset_name": "usage_rollup",
+          "label": "Transform ran on data that was already bad",
+          "kind": "transform_ran"
+        },
+        {
+          "at": "today 06:44",
+          "asset_name": "usage_rollup",
+          "label": "usage_rollup.spend_usd within 15% of forecast",
+          "kind": "assertion_fired"
+        }
+      ],
+      "narrative": "`currency_rates` is the origin of this incident, and the fault reached the symptom along fin.currency_rates \u2192 fin.usage_rollup. Path + transform proven at 100% confidence. Evidence: Freshness 39h exceeds the 6h SLA (+33h stale).",
+      "narrative_source": "template",
+      "trace": [
+        {
+          "phase": "detect",
+          "message": "Picked up incident: usage_rollup spend is 28% below forecast",
+          "data": {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)",
+            "title": "usage_rollup spend is 28% below forecast",
+            "description": "Metered spend came in well under forecast across every account, which platform-ops raised as a separate incident.",
+            "failed_assertion": "usage_rollup.spend_usd within 15% of forecast",
+            "detected_at": "today 06:44"
+          }
+        },
+        {
+          "phase": "scope",
+          "message": "Pulled 1 upstream nodes within 3 hops.",
+          "data": {
+            "upstream": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+                "hops": 1,
+                "name": "currency_rates"
+              }
+            ],
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)"
+          }
+        },
+        {
+          "phase": "hypothesize",
+          "message": "Ranked 1 candidates; 1 carry evidence. Top: currency_rates",
+          "data": {
+            "candidates": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+                "name": "currency_rates",
+                "hops_from_symptom": 1,
+                "signals": [
+                  "freshness_lag",
+                  "volume_anomaly",
+                  "upstream_incident"
+                ],
+                "score": 7.5,
+                "evidence_notes": [
+                  "Freshness 39h exceeds the 6h SLA (+33h stale).",
+                  "Row count changed -100% vs baseline.",
+                  "The FX rate feed has its own failing freshness check.",
+                  "No upstream shows this fault \u2014 the fault appears to originate here."
+                ],
+                "is_origin": true,
+                "rejected_reason": null,
+                "owner": null
+              }
+            ]
+          }
+        },
+        {
+          "phase": "prove",
+          "message": "Verified path to currency_rates across 1 lineage edge(s) \u2014 transform that carried the fault captured.",
+          "data": {
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)",
+            "cause_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+            "nodes": [
+              "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+              "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)"
+            ],
+            "edges": [
+              {
+                "from": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+                "to": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)",
+                "via_query": "CREATE OR REPLACE TABLE usage_rollup AS SELECT account, SUM(units * r.rate) AS spend_usd FROM usage u JOIN currency_rates r ON u.ccy = r.ccy GROUP BY account"
+              }
+            ],
+            "transform_sql": "CREATE OR REPLACE TABLE usage_rollup AS SELECT account, SUM(units * r.rate) AS spend_usd FROM usage u JOIN currency_rates r ON u.ccy = r.ccy GROUP BY account",
+            "causal_edge_index": 0,
+            "grounding": "path_and_transform",
+            "grounding_label": "Path + transform proven",
+            "verified": true,
+            "column_path": null
+          }
+        },
+        {
+          "phase": "scope",
+          "message": "1 downstream asset(s) inherit this data; 1 is affected without alerting.",
+          "data": {
+            "symptom_urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)",
+            "impacted": [
+              {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,fin.ops_dashboard,PROD)",
+                "name": "ops_dashboard",
+                "hops_from_symptom": 1,
+                "kind": "dashboard",
+                "owner": "platform-ops@example.com",
+                "alerting": false
+              }
+            ],
+            "count": 1,
+            "silent_count": 1,
+            "alerting_count": 0,
+            "unknown_count": 0
+          }
+        },
+        {
+          "phase": "hypothesize",
+          "message": "No freshness assertion exists on `currency_rates`. Proposing one \u2014 it would have caught this at the source.",
+          "data": {
+            "target_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+            "target_name": "currency_rates",
+            "kind": "freshness",
+            "description": "`currency_rates` must receive new data at least every 24 hours.",
+            "definition": "-- Freshness assertion on currency_rates\nSELECT MAX(_ingested_at) AS latest\nFROM currency_rates\nHAVING MAX(_ingested_at) > CURRENT_TIMESTAMP - INTERVAL '24 hours';",
+            "rationale": "The assertion that fired was on `usage_rollup`, which is where the fault surfaced. This one sits on `currency_rates`, where it started, so it fires before anything downstream is affected.",
+            "lead_time": "~33h earlier than the downstream alert"
+          }
+        },
+        {
+          "phase": "writeback",
+          "message": "Wrote incident dossier to DataHub and tagged `currency_rates` as root cause. The next person or agent inherits this knowledge.",
+          "data": {
+            "document_urn": "urn:li:document:(cauzon,[cauzon]-rca:-usage_rollup-spend-is-28%-below-forecast)",
+            "tagged_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)"
+          }
+        }
+      ],
+      "write_backs": [
+        {
+          "op": "save_document",
+          "urn": "urn:li:document:(cauzon,[cauzon]-rca:-usage_rollup-spend-is-28%-below-forecast)",
+          "title": "[Cauzon] RCA: usage_rollup spend is 28% below forecast",
+          "related": [
+            "urn:li:dataset:(urn:li:dataPlatform:snowflake,fin.usage_rollup,PROD)",
+            "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)"
+          ]
+        },
+        {
+          "op": "add_tags",
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+          "tags": [
+            "root-cause",
+            "cauzon-diagnosed",
+            "needs-assertion"
+          ]
+        },
+        {
+          "op": "update_description",
+          "urn": "urn:li:dataset:(urn:li:dataPlatform:s3,fin.currency_rates,PROD)",
+          "description": "\u26a0\ufe0f Cauzon identified this as the root cause of incident 'usage_rollup spend is 28% below forecast' (Path + transform proven, 100% confidence). See dossier urn:li:document:(cauzon,[cauzon]-rca:-usage_rollup-spend-is-28%-below-forecast)."
+        }
+      ]
+    }
   }
 }

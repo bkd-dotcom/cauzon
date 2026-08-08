@@ -780,3 +780,61 @@ def test_live_derives_a_transform_time_so_the_timeline_is_not_empty():
     assert entity["last_transform_at"], "publication time should have been formatted"
     # Onset is genuinely unknowable here and must stay absent rather than guessed.
     assert entity.get("fault_began_at") is None
+
+
+# --------------------------------------------------------------------------- #
+# Signals: every declared one must be reachable
+# --------------------------------------------------------------------------- #
+def test_no_signal_carries_a_weight_it_can_never_earn():
+    """A scoring weight for a signal nothing emits implies a capability that is absent.
+
+    `FAILED_ASSERTION` and `RECENT_QUERY_CHANGE` each had a weight and a UI label
+    while `_signals_for` never produced them, and one of the contributed skill's
+    evaluations described query signals as behaviour on that basis.
+    """
+    from cauzon.agent import _SIGNAL_WEIGHTS
+
+    assert set(_SIGNAL_WEIGHTS) == set(Signal), (
+        "every Signal must be weighted, and every weight must belong to a Signal"
+    )
+
+    # Exercise all three scenarios and collect what is actually emitted.
+    from cauzon.datahub_client import MOCK_SCENARIOS
+
+    emitted: set[Signal] = set()
+    for scenario in MOCK_SCENARIOS:
+        _client, diag = _investigate(scenario)
+        for candidate in diag.ranked_candidates:
+            emitted.update(candidate.signals)
+
+    unreachable = set(Signal) - emitted
+    assert not unreachable, f"declared but never emitted: {sorted(s.value for s in unreachable)}"
+
+
+def test_upstream_incident_is_read_from_the_catalog_not_a_fixture_key():
+    """It used to depend on `has_open_incident`, which only the demo graph sets."""
+
+    class NoQueue(MockDataHubClient):
+        def list_open_incidents(self):
+            return []
+
+    client = NoQueue()
+    symptom = next(
+        urn for urn, n in client._graph.items() if n["name"] == "daily_revenue"
+    )
+    agent = CauzonAgent(client=client)
+    signals, _notes = agent._signals_for(client.get_entity(symptom))
+    assert Signal.UPSTREAM_INCIDENT not in signals
+
+    # And present when the queue does report it.
+    agent2 = CauzonAgent(client=MockDataHubClient())
+    signals2, _ = agent2._signals_for(MockDataHubClient().get_entity(symptom))
+    assert Signal.UPSTREAM_INCIDENT in signals2
+
+
+def test_every_signal_that_can_lead_a_ranking_has_a_guardrail_template():
+    """A candidate whose top signal has no template silently gets no proposal."""
+    from cauzon.agent import _ASSERTION_BY_SIGNAL, _SIGNAL_WEIGHTS
+
+    missing = [s.value for s in _SIGNAL_WEIGHTS if s not in _ASSERTION_BY_SIGNAL]
+    assert not missing, f"no assertion template for: {missing}"

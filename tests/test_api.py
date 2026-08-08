@@ -68,13 +68,23 @@ def test_client_cannot_grant_itself_writeback_the_deployment_withheld(monkeypatc
 
 
 def test_incident_queue_exposes_every_scenario():
-    """One incident per planted fault, so all three are reachable live."""
+    """One incident per planted fault, so every one is reachable live.
+
+    `shared_cause` contributes two: one graph, two teams alerting separately on the
+    same outage, which is the case correlation exists to collapse.
+    """
+    from cauzon.datahub_client import all_mock_incidents
+
     incidents = client.get("/api/incidents").json()
-    urns = {i["urn"] for i in incidents}
-    assert urns == {FRESHNESS, SCHEMA_CHANGE, FANOUT}
+    expected = {i["urn"] for i in all_mock_incidents()}
+
+    assert {i["urn"] for i in incidents} == expected
+    # Two scenarios share the shared_cause graph, so the queue must not repeat an
+    # asset that alerts in both.
+    assert len(incidents) == len({i["urn"] for i in incidents})
+    assert {FRESHNESS, SCHEMA_CHANGE, FANOUT} <= expected
     for incident in incidents:
         assert incident["title"]
-        assert incident["failed_assertion"]
 
 
 @pytest.mark.parametrize(

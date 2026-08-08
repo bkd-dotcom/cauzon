@@ -21,7 +21,12 @@ from cauzon.agent import CauzonAgent  # noqa: E402
 from cauzon.datahub_client import MockDataHubClient  # noqa: E402
 from cauzon.models import Incident  # noqa: E402
 
-SCENARIOS = ["freshness", "schema_change", "fanout"]
+# Every planted scenario, read from the registry rather than restated here — a
+# hand-kept list means a new scenario is served by the API but missing from the
+# replay, so the offline fallback silently covers less than the queue offers.
+from cauzon.datahub_client import MOCK_SCENARIOS  # noqa: E402
+
+SCENARIOS = list(MOCK_SCENARIOS)
 OUT = ROOT / "frontend" / "lib" / "fixtures.json"
 
 _INCIDENT_FIELDS = ["urn", "title", "description", "failed_assertion", "detected_at"]

@@ -12,8 +12,6 @@ export type Signal =
   | "schema_change"
   | "volume_anomaly"
   | "row_fanout"
-  | "failed_assertion"
-  | "recent_query_change"
   | "upstream_incident";
 
 /** How well a finding can be *proven* — not merely how highly it ranked. */
@@ -267,8 +265,6 @@ export const SIGNAL_LABELS: Record<Signal, string> = {
   schema_change: "schema change",
   volume_anomaly: "volume anomaly",
   row_fanout: "key fanout",
-  failed_assertion: "failed assertion",
-  recent_query_change: "query change",
   upstream_incident: "upstream incident",
 };
 

@@ -48,8 +48,6 @@ _SIGNAL_WEIGHTS: dict[Signal, float] = {
     Signal.ROW_FANOUT: 3.0,
     Signal.UPSTREAM_INCIDENT: 2.5,
     Signal.VOLUME_ANOMALY: 2.0,
-    Signal.RECENT_QUERY_CHANGE: 1.5,
-    Signal.FAILED_ASSERTION: 1.0,
 }
 
 # A fault that also appears upstream was probably inherited, not originated here.
@@ -114,6 +112,21 @@ _ASSERTION_BY_SIGNAL: dict[Signal, tuple[str, Any, Any]] = {
             f"SELECT MAX(_ingested_at) AS latest\n"
             f"FROM {c.name}\n"
             f"HAVING MAX(_ingested_at) > CURRENT_TIMESTAMP - INTERVAL '24 hours';"
+        ),
+    ),
+    Signal.UPSTREAM_INCIDENT: (
+        "freshness",
+        lambda c: (
+            f"`{c.name}` already has its own failing check — wire it to block "
+            f"downstream refreshes instead of letting them run on bad data."
+        ),
+        lambda c: (
+            f"-- Gate downstream builds on {c.name}'s own assertions\n"
+            f"-- A failing upstream check should stop the pipeline here, not\n"
+            f"-- surface three hops later as someone else's incident.\n"
+            f"depends_on:\n"
+            f"  - assertion: {c.name}\n"
+            f"    on_failure: halt_downstream"
         ),
     ),
     Signal.SCHEMA_CHANGE: (
@@ -182,6 +195,7 @@ class CauzonAgent:
         # Lazily resolved so the core never hard-depends on an LLM being present.
         self._reasoner = reasoner
         self._lineage_cache: dict[str, list[dict[str, Any]]] = {}
+        self._open_urns: Optional[set[str]] = None
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -358,11 +372,31 @@ class CauzonAgent:
                 or f"{entity['duplicate_key_pct']:.1f}% of join-key values are duplicated."
             )
 
-        if entity.get("has_open_incident"):
+        # Asked of the catalog rather than read off a fixture key. `has_open_incident`
+        # is only set by the planted demo graph, so this signal never fired on a real
+        # catalog — the same defect the blast radius had.
+        if entity.get("urn") in self._open_incident_urns():
             signals.append(Signal.UPSTREAM_INCIDENT)
             notes.append(entity.get("incident_note") or "Has its own open incident.")
 
         return signals, notes
+
+    def _open_incident_urns(self) -> set[str]:
+        """URNs currently alerting, fetched once per agent and reused.
+
+        An empty set on failure is the right default here, unlike in the blast
+        radius: a missing signal costs a candidate some score, whereas a missing
+        alerting status was being reported as a positive claim that nobody is
+        watching.
+        """
+        if self._open_urns is None:
+            try:
+                self._open_urns = {
+                    i["urn"] for i in self.client.list_open_incidents() if i.get("urn")
+                }
+            except Exception:
+                self._open_urns = set()
+        return self._open_urns
 
     def _assess_origin(
         self,
