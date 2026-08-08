@@ -47,6 +47,19 @@ the demo; the rest is framing.
 
 ## If you have room
 
+**One cause, several alerts** (~15s, trade against shot 7). On `/overview`, above
+the inbox.
+
+> "And when one upstream breaks, every team downstream opens their own ticket. The
+> queue looks like three problems. Cauzon intersects their lineage and proves a path
+> to each one — so this is one outage with two witnesses, not two incidents. Same
+> gate: it only groups them if it can prove every path."
+
+The strongest addition if the audience is technical. It is the one moment that
+shows the proof gate doing something single-incident RCA cannot.
+
+
+
 The shot list runs 2:55 against a 3:00 limit, so these are trades rather than
 additions. Both are on `/overview`, so they cost no navigation.
 

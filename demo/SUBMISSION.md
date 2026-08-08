@@ -49,6 +49,40 @@ definition 4.6x past its freshness SLA. A stale lookup table is stale geography,
 not just a stale row count, and the map is what makes that a number rather than a
 turn of phrase.
 
+## One cause, several alerts
+
+When an upstream asset fails, every team downstream opens their own incident on
+their own asset. The queue looks like several problems and the same question gets
+answered once per team. Cauzon intersects the open incidents' upstream ancestors,
+discards any that carry no fault of their own, and proves a path to **each**
+symptom — claiming a shared cause only where every path holds, graded at the
+weakest rung among them. Anything it cannot prove it reaches is named rather than
+folded in.
+
+## It runs unprompted
+
+`POST /api/sweep` investigates the whole open queue on a schedule, correlates it,
+and files the dossiers it can prove. No database: the catalog is the store, so a
+sweep's durable product is the write-back itself. It refuses when its token is
+unset rather than treating unconfigured as unrestricted, and a scheduler cannot
+grant itself write permission the deployment withheld.
+
+## Measured, not asserted
+
+| What is measured | Result |
+| --- | --- |
+| Localises the declared cause | 5/5 |
+| Claimed grounding never exceeds what the fixture supports | 5/5 |
+| Names the ungroundable decoy | 0 times |
+| Refuses when the strongest suspect has no path | 5/5 |
+| Writes nothing when it cannot ground a cause | 5/5 |
+| Drops to PATH_ONLY when query history is absent | 5/5 |
+
+Ground truth is declared separately from the agent's output, and CI fails on drift,
+so these cannot quietly stop being true. The last row is the one that matters: every
+planted scenario retains its transform SQL, so an agent that always claimed the top
+rung would look honest until the query history is stripped.
+
 ## How it works
 
 Five phases against the DataHub MCP server, each streamed to the UI as it

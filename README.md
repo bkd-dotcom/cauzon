@@ -215,6 +215,37 @@ enough to load on every page view, so they use metadata reads and a bounded line
 walk — the same three-hop scope as an investigation, but no proof gate and no
 dossier.
 
+## One cause behind several alerts
+
+When an upstream asset fails, every team downstream opens their own incident on
+their own asset. The queue then looks like several problems, and answering "why did
+this break" separately for each one reaches the same conclusion once per team.
+
+`agent/cauzon/correlate.py` intersects the open incidents' upstream ancestors,
+discards any that carry no fault of their own — being a common dependency is not
+evidence of being the broken one — and then proves a path to **each** symptom using
+the same `_prove` gate as a single investigation. A shared cause is claimed only
+where every path holds, graded at the **weakest** rung among them, because a group
+claim cannot be better grounded than its worst link. Anything the cause is upstream
+of but cannot be proven to reach is named rather than folded in.
+
+Most of its tests are about the refusal, because a confident false positive here is
+worse than not having the feature: it sends a team to fix something that was never
+broken. The three disjoint planted scenarios must correlate to nothing.
+
+## It runs unprompted
+
+Everything else here runs because somebody clicked. `POST /api/sweep` investigates
+the whole open queue, correlates it, and files what it can prove — which is the
+difference between a tool and an agent.
+
+There is no database: the catalog is the store, so a sweep's durable product is the
+dossier it writes back, and on a read-only backend it reports that nothing was
+persisted rather than implying otherwise. It refuses when `CAUZON_SWEEP_TOKEN` is
+unset rather than treating unconfigured as unrestricted, and a scheduler cannot
+grant itself write-back the deployment withheld. Cloud Scheduler wiring is in
+[`deploy/README.md`](./deploy/README.md).
+
 ## The investigation loop
 
 | Phase | What Cauzon does | DataHub tools |
@@ -397,6 +428,7 @@ cauzon/
 │   ├── reasoner.py            # optional Claude narration, structurally unable to decide
 │   ├── models.py              # grounding ladder, confidence factors, proof path
 │   ├── overview.py            # triage inbox + catalog map (metadata reads only)
+│   ├── correlate.py           # one cause behind several alerts, via the same gate
 │   ├── zone_volume.py         # real pickups per zone, aggregated by Socrata
 │   └── cli.py
 ├── backend/main.py            # FastAPI + WebSocket live trace
