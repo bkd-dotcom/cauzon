@@ -330,11 +330,36 @@ Narration is **opt-in** and needs `pip install -e ".[llm]"` plus an
 `ANTHROPIC_API_KEY`. Without it — the default — Cauzon uses deterministic
 templates, so tests are hermetic and a demo cannot fail on a network call.
 
+## Measured, not asserted
+
+`scripts/evaluate.py` runs the agent against fixtures whose correct answer is
+declared separately from the agent's output, and writes
+[`docs/evaluation.json`](./docs/evaluation.json). CI regenerates it and fails on
+drift, and the script itself exits non-zero if any figure regresses — so these
+numbers cannot quietly stop being true.
+
+| What is measured | Result |
+| --- | --- |
+| Localises the declared cause | **5/5** |
+| Claimed grounding rung never exceeds what the fixture supports | **5/5** |
+| Names the ungroundable decoy | **0** times |
+| Refuses when the strongest suspect has no path | **5/5** |
+| Writes nothing when it cannot ground a cause | **5/5** |
+| Drops to `PATH_ONLY` when query history is absent | **5/5** |
+| Still finds the cause without query history | **5/5** |
+
+The last two matter most. Every planted scenario retains its transform SQL, so an
+agent that always claimed `PATH_AND_TRANSFORM` would score full marks on
+localisation and look perfectly honest. Stripping the query history — which is the
+live catalog's normal condition, since Socrata retains none — forces the claim down
+a rung while the path still holds. That is the ladder doing its job, and it is
+checked against the fixture rather than taken on the agent's word.
+
 ## Tests
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 125 tests
+pytest -q          # 178 tests
 ```
 
 The suite is deliberately adversarial about the central claim: a hostile narrator

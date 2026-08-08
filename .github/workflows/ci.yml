@@ -43,10 +43,16 @@ jobs:
         run: |
           PYTHONPATH=agent python scripts/build_fixtures.py
           PYTHONPATH=agent python scripts/build_examples.py
+      # Measured, not asserted. This also exits non-zero on its own if the agent
+      # ever overclaims a grounding rung, names the ungroundable decoy, or writes
+      # an ungrounded finding back — so the published figures cannot rot, and the
+      # behaviour behind them cannot regress unnoticed.
+      - name: Evaluate
+        run: PYTHONPATH=agent python scripts/evaluate.py
       - name: Check for drift
         run: |
           if ! git diff --quiet; then
-            echo "::error::Generated artifacts are stale. Run scripts/build_fixtures.py and scripts/build_examples.py, then commit."
+            echo "::error::Generated artifacts are stale. Run scripts/build_fixtures.py, scripts/build_examples.py and scripts/evaluate.py, then commit."
             git diff --stat
             exit 1
           fi

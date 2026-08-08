@@ -6,6 +6,7 @@ promote an unproven claim. They are deliberately adversarial: most of them fail
 if a future change makes the agent more willing to blame something.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -838,3 +839,32 @@ def test_every_signal_that_can_lead_a_ranking_has_a_guardrail_template():
 
     missing = [s.value for s in _SIGNAL_WEIGHTS if s not in _ASSERTION_BY_SIGNAL]
     assert not missing, f"no assertion template for: {missing}"
+
+
+# --------------------------------------------------------------------------- #
+# The published evaluation figures
+# --------------------------------------------------------------------------- #
+def test_published_evaluation_matches_a_fresh_run():
+    """The README quotes these numbers, so a stale artifact is a false claim.
+
+    CI regenerates and drift-checks the file, and this catches the case where
+    someone runs the suite without regenerating.
+    """
+    import json
+    import subprocess
+
+    artifact = Path(__file__).resolve().parents[1] / "docs" / "evaluation.json"
+    assert artifact.exists(), "run scripts/evaluate.py"
+    published = json.loads(artifact.read_text())["summary"]
+
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, "scripts/evaluate.py"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": str(root / "agent")},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    fresh = json.loads(artifact.read_text())["summary"]
+    assert fresh == published
