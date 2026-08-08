@@ -121,7 +121,7 @@ const GROUPS: { group: string; items: Product[] }[] = [
       {
         mark: "typescript",
         name: "TypeScript",
-        role: "Every API shape is typed on both sides, so a field the backend stops sending is a build error rather than a blank panel.",
+        role: "Every API shape is typed on both sides. The types are hand-written, so a dropped field is undefined at runtime rather than a build error — which is why the optional ones are marked optional.",
       },
     ],
   },

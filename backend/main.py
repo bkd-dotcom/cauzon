@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -35,7 +35,12 @@ from cauzon.datahub_client import (  # noqa: E402
 )
 from cauzon.live_client import LiveDataHubClient  # noqa: E402
 from cauzon.models import Capabilities, Incident, TraceEvent  # noqa: E402
-from cauzon.overview import CatalogMap, build_catalog_map, build_inbox  # noqa: E402
+from cauzon.overview import (  # noqa: E402
+    CatalogMap,
+    build_catalog_map,
+    build_inbox,
+    inbox_sort_key,
+)
 from cauzon.zone_volume import ZONE_DATASET_ID, ZoneVolume  # noqa: E402
 
 app = FastAPI(title="Cauzon API", version="0.1.0")
@@ -224,17 +229,9 @@ def _catalog_clients() -> list[Any]:
 def inbox() -> list[dict[str, Any]]:
     """Open incidents enriched for triage, worst-overdue first."""
     entries = [e for client in _catalog_clients() for e in build_inbox(client)]
-    # Same key build_inbox uses. Re-sorting on the ratio alone would bury a
-    # failing assertion on a fresh asset, which is a live problem even though
-    # nothing is late — and would contradict the ordering the builder is tested on.
-    entries.sort(
-        key=lambda e: (
-            2 if e.severity == "critical" else 1,
-            e.downstream_count,
-            e.overdue_ratio or 0.0,
-        ),
-        reverse=True,
-    )
+    # The builder's own key, not a copy of it: entries from several clients have to
+    # be re-sorted after merging, and two copies of this tuple could drift apart.
+    entries.sort(key=inbox_sort_key, reverse=True)
     return [entry.to_dict() for entry in entries]
 
 
@@ -302,6 +299,104 @@ def correlate_incidents() -> list[dict[str, Any]]:
             out.append(correlation.to_dict())
     out.sort(key=lambda c: c["count"], reverse=True)
     return out
+
+
+class SweepRequest(BaseModel):
+    """A sweep writes to a catalog, so its inputs are bounded deliberately."""
+
+    limit: int = 10
+    write_back: bool = True
+
+
+def _sweep_token() -> str:
+    return os.getenv("CAUZON_SWEEP_TOKEN", "").strip()
+
+
+@app.post("/api/sweep")
+def sweep(req: SweepRequest, x_cauzon_sweep_token: str = Header(default="")) -> dict[str, Any]:
+    """Investigate the open queue unprompted, and file what it can prove.
+
+    This is the difference between a tool and an agent: everything else here runs
+    because somebody clicked. A scheduler calls this.
+
+    Two things it deliberately does not do:
+
+    * **Default open.** It requires CAUZON_SWEEP_TOKEN, and *refuses when the
+      variable is unset* rather than treating "no token configured" as "no token
+      required". A sweep writes dossiers into a shared catalog; an unauthenticated
+      trigger for that is not acceptable even on a demo deployment.
+    * **Persist anything of its own.** There is no database here, and adding one to
+      hold agent output would be the wrong shape — the catalog *is* the store. So a
+      sweep's durable product is the dossiers it writes back, and where the backend
+      cannot accept writes it says so instead of implying the run was saved.
+    """
+    expected = _sweep_token()
+    if not expected:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Sweeps are disabled: CAUZON_SWEEP_TOKEN is not set. A sweep files "
+                "dossiers into the catalog, so it is opt-in rather than open by "
+                "default."
+            ),
+        )
+    if x_cauzon_sweep_token != expected:
+        raise HTTPException(status_code=401, detail="Invalid sweep token.")
+
+    limit = max(1, min(req.limit, 25))
+    allowed = _writeback_allowed() and req.write_back
+
+    investigated: list[dict[str, Any]] = []
+    written = 0
+    for client in _catalog_clients():
+        for entry in sorted(
+            build_inbox(client), key=inbox_sort_key, reverse=True
+        )[:limit]:
+            agent = CauzonAgent(client=client)
+            diagnosis = agent.investigate(
+                Incident(
+                    urn=entry.urn,
+                    title=entry.title or entry.name,
+                    description="",
+                    failed_assertion=entry.failed_assertion,
+                    detected_at=entry.detected_at,
+                ),
+                write_back=allowed,
+            )
+            writes = getattr(client, "writes", [])
+            written += len(writes)
+            investigated.append(
+                {
+                    "urn": entry.urn,
+                    "name": entry.name,
+                    "severity": entry.severity,
+                    "root_cause": diagnosis.root_cause.name if diagnosis.root_cause else None,
+                    "grounding": diagnosis.grounding.value,
+                    "confidence": diagnosis.confidence,
+                    "write_backs": len(writes),
+                }
+            )
+
+    grounded = [r for r in investigated if r["root_cause"]]
+    correlations = correlate_incidents()
+
+    return {
+        "investigated": len(investigated),
+        "grounded": len(grounded),
+        "escalated": len(investigated) - len(grounded),
+        "correlations": len(correlations),
+        "write_backs": written,
+        # Said plainly rather than left to be inferred from a zero.
+        "persisted": bool(allowed and written),
+        "persistence_note": (
+            "Dossiers were filed into the catalog."
+            if allowed and written
+            else "Nothing was persisted: this backend does not accept write-back, "
+            "so the report below is the only record of this run."
+        ),
+        "results": investigated,
+        "shared_causes": correlations,
+    }
 
 
 @app.post("/api/investigate")

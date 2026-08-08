@@ -27,12 +27,17 @@ const sourceSerif = Source_Serif_4({
   display: "swap",
 });
 
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 export const metadata: Metadata = {
   title: "Cauzon — every root cause, proven from the source",
   description:
     "A path-grounded root-cause analysis agent for DataHub. Walks lineage upstream and only names a cause it can prove with a verifiable path.",
-  manifest: "/manifest.webmanifest",
-  icons: { icon: "/favicon-32.png", apple: "/apple-touch-icon.png" },
+  // Every one of these is prefixed. Next rewrites `src`/`href` in JSX under a
+  // basePath, but not string paths in the metadata object — so an absolute path
+  // here 404s on a basePath deployment, which is how GitHub Pages is configured.
+  manifest: `${BASE}/manifest.webmanifest`,
+  icons: { icon: `${BASE}/favicon-32.png`, apple: `${BASE}/apple-touch-icon.png` },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

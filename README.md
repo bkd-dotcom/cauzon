@@ -199,8 +199,9 @@ few blocks of each other and labelling by rank would stack them. Its frame is
 fitted to the geometry rather than the geometry scaled into a frame of some other
 shape, which is what used to leave a dead band down each side.
 
-Both the geometry and one real aggregation are generated artifacts, like the
-fixtures — real, reduced, never hand-edited
+Both the geometry and one real aggregation are generated artifacts — real, reduced,
+never hand-edited. Unlike the fixtures they are not CI drift-checked, because
+regenerating them means calling Socrata and jsDelivr on every push
 (`scripts/build_zone_geometry.py`). Recording the aggregation is what lets the
 landing page draw true numbers with no backend to ask; the overview page still
 prefers live figures and says which it is showing.
@@ -210,8 +211,9 @@ SLA is a lookup table" carries no urgency as a sentence and quite a lot as a
 picture.
 
 None of the three runs an investigation. Enriching a queue has to stay cheap
-enough to load on every page view, so they use metadata reads and one-hop lineage
-only.
+enough to load on every page view, so they use metadata reads and a bounded lineage
+walk — the same three-hop scope as an investigation, but no proof gate and no
+dossier.
 
 ## The investigation loop
 
@@ -243,7 +245,7 @@ PYTHONPATH=agent python3 -m cauzon.cli --scenario fanout --no-writeback
 ```
 
 ```bash
-# Web UI (also an installable mobile PWA)
+# Web UI (installable to a phone home screen; no offline mode)
 cd frontend
 npm install
 npm run dev            # http://localhost:3000
@@ -321,6 +323,7 @@ Two robustness details worth noting, both handled by `MCPDataHubClient`:
 | `DATAHUB_GMS_URL` | `http://localhost:8080` | GMS endpoint (`mcp` backend) |
 | `DATAHUB_TOKEN` | — | DataHub personal access token (`mcp` backend) |
 | `CAUZON_CORS_ORIGINS` | `*` | Allowed CORS origins for the API |
+| `CAUZON_SWEEP_TOKEN` | — | Shared secret for `POST /api/sweep`. Unset means sweeps are **refused**, not open |
 | `CAUZON_LLM_NARRATION` | off | Set to `1` to let Claude write the dossier narrative |
 | `CAUZON_LLM_MODEL` | `claude-opus-5` | Model for the narration layer |
 | `NEXT_PUBLIC_CAUZON_API` | `http://localhost:8000` | Backend the frontend talks to |

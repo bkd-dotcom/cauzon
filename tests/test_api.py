@@ -218,3 +218,82 @@ def test_the_catalog_queue_does_not_double_count_a_shared_graph():
     assert len(inbox) == len({e["urn"] for e in inbox})
     urns = [n["urn"] for n in catalog["nodes"]]
     assert len(urns) == len(set(urns))
+
+
+# --------------------------------------------------------------------------- #
+# Autonomous sweeps
+# --------------------------------------------------------------------------- #
+def test_sweep_refuses_when_no_token_is_configured(monkeypatch):
+    """Unset must mean closed, not "no token required".
+
+    A sweep files dossiers into a shared catalog. Treating a missing configuration
+    as permission would make every deployment that forgot to set it publicly
+    writable.
+    """
+    monkeypatch.delenv("CAUZON_SWEEP_TOKEN", raising=False)
+    res = client.post("/api/sweep", json={})
+    assert res.status_code == 403
+    assert "not set" in res.json()["detail"]
+
+
+def test_sweep_rejects_a_wrong_token(monkeypatch):
+    monkeypatch.setenv("CAUZON_SWEEP_TOKEN", "right")
+    assert (
+        client.post(
+            "/api/sweep", json={}, headers={"x-cauzon-sweep-token": "wrong"}
+        ).status_code
+        == 401
+    )
+    assert client.post("/api/sweep", json={}).status_code == 401
+
+
+def test_sweep_investigates_the_whole_queue_and_correlates(monkeypatch):
+    monkeypatch.setenv("CAUZON_SWEEP_TOKEN", "right")
+    body = client.post(
+        "/api/sweep", json={"limit": 25}, headers={"x-cauzon-sweep-token": "right"}
+    ).json()
+
+    queue = client.get("/api/inbox").json()
+    assert body["investigated"] == len(queue), "a sweep must not skip part of the queue"
+    assert body["grounded"] + body["escalated"] == body["investigated"]
+    assert body["correlations"] >= 1
+    assert body["shared_causes"][0]["cause_name"] == "currency_rates"
+
+
+def test_sweep_honours_the_bound(monkeypatch):
+    monkeypatch.setenv("CAUZON_SWEEP_TOKEN", "right")
+    body = client.post(
+        "/api/sweep", json={"limit": 1}, headers={"x-cauzon-sweep-token": "right"}
+    ).json()
+    # One per catalog client, and the mock exposes several disjoint graphs.
+    assert 1 <= body["investigated"] < len(client.get("/api/inbox").json())
+
+
+def test_sweep_respects_the_deployment_writeback_gate(monkeypatch):
+    """A scheduler cannot grant itself permission the deployment withheld."""
+    import backend.main as main
+
+    monkeypatch.setenv("CAUZON_SWEEP_TOKEN", "right")
+    monkeypatch.setattr(main, "_writeback_allowed", lambda: False)
+    body = client.post(
+        "/api/sweep",
+        json={"write_back": True},
+        headers={"x-cauzon-sweep-token": "right"},
+    ).json()
+
+    assert body["write_backs"] == 0
+    assert body["persisted"] is False
+    # And it says so, rather than leaving a zero to be interpreted.
+    assert "Nothing was persisted" in body["persistence_note"]
+    assert body["investigated"] > 0, "it should still investigate and report"
+
+
+def test_the_api_and_the_builder_sort_the_inbox_identically():
+    """The HTTP layer used to carry its own copy of the sort key."""
+    from cauzon.overview import build_inbox, inbox_sort_key
+    from cauzon.datahub_client import MockDataHubClient
+
+    entries = build_inbox(MockDataHubClient(scenario="freshness"))
+    assert [e.urn for e in entries] == [
+        e.urn for e in sorted(entries, key=inbox_sort_key, reverse=True)
+    ]

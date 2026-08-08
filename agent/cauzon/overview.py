@@ -7,7 +7,8 @@ you have picked an incident to investigate.
 Both are built from the same `DataHubClient` protocol as the investigation, so
 they work identically over the planted graph, a live public catalog, and a real
 DataHub. Neither runs an investigation: enriching a queue must stay cheap enough
-to load on every page view, so these use only metadata reads and one-hop lineage.
+to load on every page view, so these use metadata reads and a bounded lineage walk
+and never run an investigation.
 """
 
 from __future__ import annotations
@@ -151,7 +152,9 @@ def build_inbox(client: Any) -> list[InboxEntry]:
         except Exception:
             entity = {}
 
-        # One hop each way: enough to show what is at stake without investigating.
+        # Three hops each way, matching the investigation's own scope: a triage row
+        # that under-counted what is downstream would rank the queue wrongly. Still
+        # metadata reads only — no proof gate, no dossier.
         def _count(direction: str) -> int:
             try:
                 return len(client.get_lineage(urn, direction=direction, hops=3))
@@ -178,18 +181,23 @@ def build_inbox(client: Any) -> list[InboxEntry]:
             )
         )
 
-    # Critical first, then by how much is downstream, then by staleness. Ordering
-    # on the ratio alone would bury a failing assertion on a fresh asset, which is
-    # a live problem even though nothing is late.
-    entries.sort(
-        key=lambda e: (
-            2 if e.severity == "critical" else 1,
-            e.downstream_count,
-            e.overdue_ratio or 0.0,
-        ),
-        reverse=True,
-    )
+    entries.sort(key=inbox_sort_key, reverse=True)
     return entries
+
+
+def inbox_sort_key(entry: InboxEntry) -> tuple[int, int, float]:
+    """Triage order: critical first, then what is at stake, then staleness.
+
+    Extracted so the API and the sweep sort identically. The HTTP layer used to
+    carry its own copy of this tuple, which meant the two could drift apart with
+    nothing to catch it — and ordering on the ratio alone would bury a failing
+    assertion on a fresh asset, which is a live problem even though nothing is late.
+    """
+    return (
+        2 if entry.severity == "critical" else 1,
+        entry.downstream_count,
+        entry.overdue_ratio or 0.0,
+    )
 
 
 def build_catalog_map(client: Any) -> CatalogMap:

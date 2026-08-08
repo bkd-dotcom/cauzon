@@ -73,6 +73,47 @@ curl -s https://cauzon-api-XXXX.us-central1.run.app/api/health
 # {"status":"ok","datahub_backend":"mock","write_back_allowed":true,"datahub_ui_url":null}
 ```
 
+## Running it on a schedule
+
+Everything else in Cauzon runs because somebody clicked. `POST /api/sweep`
+investigates the open queue unprompted, correlates what shares a cause, and files
+the dossiers it can prove — which is the difference between a tool and an agent.
+
+No daemon and no database: Cloud Run scales to zero, and the catalog is already the
+store. A sweep's durable product is the dossiers it writes back, so on a read-only
+backend it reports that nothing was persisted rather than implying the run was
+saved.
+
+```bash
+# A shared secret. The endpoint refuses when this is unset — "no token configured"
+# is not treated as "no token required", because a sweep writes to a shared catalog.
+gcloud run services update cauzon-api --region us-central1 \
+  --update-secrets CAUZON_SWEEP_TOKEN=cauzon-sweep-token:latest
+
+# Nightly at 04:17. Cloud Scheduler's free tier covers three jobs.
+gcloud scheduler jobs create http cauzon-nightly-sweep \
+  --location us-central1 \
+  --schedule "17 4 * * *" \
+  --uri "https://cauzon-api-XXXX.us-central1.run.app/api/sweep" \
+  --http-method POST \
+  --headers "Content-Type=application/json,X-Cauzon-Sweep-Token=$TOKEN" \
+  --message-body '{"limit": 10, "write_back": true}' \
+  --oidc-service-account-email cauzon-scheduler@PROJECT.iam.gserviceaccount.com
+```
+
+Two flags worth understanding rather than copying:
+
+- **`--oidc-service-account-email`** authenticates the *caller* to Cloud Run. The
+  sweep token authorises the *action*. Both, because the first stops strangers
+  reaching the endpoint and the second stops a compromised internal caller filing
+  dossiers.
+- **`--message-body`'s `write_back`** cannot grant permission the deployment
+  withheld. On `mcp` the deployment still has to set `CAUZON_ALLOW_WRITEBACK`, and
+  the sweep reports zero writes and says why if it did not.
+
+Off by default, deliberately. A public demo that files a dossier every night into
+somebody's real catalog would be worse than no scheduling at all.
+
 ## Stage 2 — a real DataHub
 
 DataHub cannot run on Cloud Run: it needs ~8 GB RAM and holds state across
