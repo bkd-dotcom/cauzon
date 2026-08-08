@@ -53,12 +53,12 @@ For each upstream node, gather evidence with **get_entities** (and
 **list_schema_fields** where a schema change is suspected) and score these
 signals:
 
-| Signal | How to detect | Weight |
-| --- | --- | --- |
-| Freshness lag | freshness exceeds the expected SLA | high |
-| Schema change | columns added / removed / retyped recently | high |
-| Key fanout | a join key is no longer unique, so downstream joins multiply rows | high |
-| Volume anomaly | row-count delta ≥ 20% vs baseline | medium |
+| Signal              | How to detect                                                      | Weight |
+| ------------------- | ------------------------------------------------------------------ | ------ |
+| Freshness lag       | freshness exceeds the expected SLA                                 | high   |
+| Schema change       | columns added / removed / retyped recently                         | high   |
+| Key fanout          | a join key is no longer unique, so downstream joins multiply rows  | high   |
+| Volume anomaly      | row-count delta ≥ 20% vs baseline                                  | medium |
 | Recent query change | the defining transform in **get_dataset_queries** changed recently | medium |
 
 Use more than one signal. A single anomaly score cannot distinguish these
@@ -84,7 +84,7 @@ For your top candidate, call **get_lineage_paths_between**
 - If **no path** is returned, **reject the candidate** and move to the next one.
   Do not report an ungrounded cause.
 - If a path exists, use **get_dataset_queries** along the path to identify the
-  transform SQL that carried the fault downstream. The edge on the path *leaving*
+  transform SQL that carried the fault downstream. The edge on the path _leaving_
   the culprit is the one that propagated the fault; that transform is your
   strongest witness. The edge list plus that SQL is your proof.
 
@@ -93,11 +93,11 @@ Only a candidate with a reconstructable path is accepted as the root cause.
 **State which rung of grounding you reached.** Query history is often absent, so
 distinguish the two honest outcomes instead of blurring them:
 
-| Grounding | When | What to report |
-| --- | --- | --- |
-| Path **and** transform | Edges reconstructed and the causal transform retrieved | Full proof |
-| Path **only** | Edges reconstructed, no query history for that edge | Report the path as proven and the transform as unavailable. Lower your stated confidence |
-| Ungrounded | No path | Reject the candidate |
+| Grounding              | When                                                   | What to report                                                                           |
+| ---------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Path **and** transform | Edges reconstructed and the causal transform retrieved | Full proof                                                                               |
+| Path **only**          | Edges reconstructed, no query history for that edge    | Report the path as proven and the transform as unavailable. Lower your stated confidence |
+| Ungrounded             | No path                                                | Reject the candidate                                                                     |
 
 Do not present a path-only finding as a complete proof. Requiring the SQL
 absolutely would be useless on catalogs without query history; quietly treating
@@ -144,11 +144,39 @@ person inherits it as fact.
    verified path `raw_trips → trips_cleaned → daily_revenue`; capture the
    `COPY INTO raw_trips …` ingestion transform.
 5. **Write back** — `save_document` dossier + `add_tags(raw_trips,
-   [root-cause])` + `update_description`.
+[root-cause])` + `update_description`.
 
 **Result:** "Root cause = `raw_trips` (ingestion stalled ~2 days ago). Proof:
 `raw_trips → trips_cleaned → daily_revenue`. Fix: restart the `COPY INTO` job
 and re-run downstream transforms once fresh data lands."
+
+---
+
+## When several incidents are open at once
+
+One broken upstream produces one incident per downstream team. The queue then looks
+like several problems, and answering "why did this break" separately for each one
+reaches the same conclusion three times.
+
+Before investigating individually, check whether they are the same outage:
+
+1. Scope the upstream ancestors of **every** open symptom, not just the first.
+2. Intersect those sets. A cause of several symptoms has to be upstream of all of
+   them.
+3. Discard any shared ancestor that carries no fault of its own. Being a common
+   dependency is not evidence of being the broken one — the busiest node in a graph
+   is upstream of everything.
+4. Verify a path to **each** symptom separately. Do not assert the second by
+   association with the first; the whole discipline is that association is not
+   proof.
+5. Grade the group at the **weakest** rung among those proofs. A shared-cause claim
+   cannot be better grounded than its worst link.
+6. Name any incident the cause cannot be proven to reach, rather than folding it
+   into the group.
+
+Then file **one** dossier for the shared cause, related to every symptom URN,
+instead of one per team. That is the difference between a queue of five alerts and
+one outage with five witnesses.
 
 ---
 
@@ -165,6 +193,8 @@ and re-run downstream transforms once fresh data lands."
   different fix from the first.
 - **Write back only when grounded.** The catalog is shared truth — never pollute
   it with a guess. The next reader will treat whatever you write as fact.
+- **Correlate before you multiply.** Several open incidents may be one outage. Do
+  not file the same finding once per downstream team.
 
 See `references/rca-signals-reference.md` for detailed signal heuristics and
 `references/grounding-reference.md` for the path-verification rules.

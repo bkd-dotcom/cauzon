@@ -18,11 +18,47 @@ contrib/datahub-skills-pr/
 │   ├── references/rca-signals-reference.md
 │   ├── references/grounding-reference.md
 │   ├── templates/incident-dossier.template.md
-│   └── evaluations/diagnose-volume-drop.json
+│   └── evaluations/
+│       ├── diagnose-volume-drop.json
+│       ├── reject-ungroundable-suspect.json
+│       └── correlate-shared-cause.json
 └── commands/catalog-rca.md                       # slash-command wrapper
 ```
 
-## Steps
+## Status: prepared, not opened
+
+The fork exists, the branch is pushed, and every check this repository runs has
+been verified against the actual files. **One command remains, and it is yours to
+run** — opening a pull request on someone else's repository should be a deliberate
+act, not a side effect.
+
+```bash
+gh pr create \
+  --repo datahub-project/datahub-skills \
+  --head bkd-dotcom:feat/datahub-rca-skill \
+  --title "feat(skills): add datahub-rca for path-grounded root-cause analysis" \
+  --body-file /Users/binaydalai/cauzon/contrib/datahub-skills-pr/PR_BODY.md
+```
+
+Add `--draft` if you would rather it land as a draft first.
+
+What was already done:
+
+- Forked `datahub-project/datahub-skills` to `bkd-dotcom/datahub-skills`.
+- Branch `feat/datahub-rca-skill`, committed with a Conventional Commit title
+  (the repo enforces these on PR titles).
+- `markdownlint-cli2` and `prettier --check` run with **this repository's own
+  configs** — prettier reformatted `SKILL.md`'s tables and one emphasis marker,
+  which would otherwise have failed CI. That formatting is synced back here so
+  the two copies do not drift.
+- Verified `evaluations/` is a real convention upstream (three skills use it) and
+  that the JSON shape matches theirs.
+- Verified `datahub-quality` does **not** overlap: it manages assertions and
+  incidents, and says nothing about diagnosing cause.
+- Amended the `using-datahub` routing table, which sent `"root cause"` to
+  `datahub-lineage`. Without that the skill is unreachable in practice.
+
+## Steps (reference — already executed)
 
 1. **Fork & clone** the skills repo:
 

@@ -64,15 +64,31 @@ unavailable, rather than silently treating a partial proof as a complete one.
 - `skills/datahub-rca/references/rca-signals-reference.md` — signal heuristics
 - `skills/datahub-rca/references/grounding-reference.md` — the proof rules
 - `skills/datahub-rca/templates/incident-dossier.template.md`
-- `skills/datahub-rca/evaluations/` — two evaluations: the happy path, and one
-  that specifically checks the skill rejects a suspect it cannot connect
+- `skills/datahub-rca/evaluations/` — three evaluations: a straightforward
+  diagnosis, a refusal where the strongest-signalled suspect has no path, and a
+  shared-cause correlation
 - `commands/catalog-rca.md` — slash-command wrapper
-- `skills/using-datahub/SKILL.md` — routing-table row (see above)
-- `README.md` — skill listed alongside the existing catalog skills
+- `skills/using-datahub/SKILL.md` — routing-table rows (see above)
+- `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` — description
+  updated to mention root-cause analysis
+
+## When several incidents are open at once
+
+One broken upstream produces one incident per downstream team, so the queue looks
+like several problems and the same question gets answered once per team. The skill
+covers this: scope every open symptom, intersect their upstream ancestors, discard
+shared ancestors carrying no fault of their own, and verify a path to **each**
+symptom rather than asserting the rest by association. The group claim is graded at
+the weakest rung among those proofs, because it cannot be better grounded than its
+worst link, and any incident the cause cannot be proven to reach is named rather
+than folded in.
 
 ## Testing
 
-- `pre-commit run --all-files` passes (prettier, markdownlint, ruff).
+- `markdownlint-cli2` and `prettier --check` pass on every added file, using this
+  repository's own configs.
+- The evaluation JSON matches the shape used by `load-standards`,
+  `datahub-connector-planning`, and `datahub-connector-pr-review`.
 - The skill relies only on standard MCP tools (`search`, `get_lineage`,
   `get_lineage_paths_between`, `get_entities`, `list_schema_fields`,
   `get_dataset_queries`, `search_documents`, `save_document`, `add_tags`,
