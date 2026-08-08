@@ -25,38 +25,29 @@ contrib/datahub-skills-pr/
 └── commands/catalog-rca.md                       # slash-command wrapper
 ```
 
-## Status: prepared, not opened
+## Status: open
 
-The fork exists, the branch is pushed, and every check this repository runs has
-been verified against the actual files. **One command remains, and it is yours to
-run** — opening a pull request on someone else's repository should be a deliberate
-act, not a side effect.
+**[datahub-project/datahub-skills#117](https://github.com/datahub-project/datahub-skills/pull/117)** — opened, not a draft, mergeable,
+and passing their checks. +419/-3 across 12 files, with nothing outside the paths
+this skill owns.
 
-```bash
-gh pr create \
-  --repo datahub-project/datahub-skills \
-  --head bkd-dotcom:feat/datahub-rca-skill \
-  --title "feat(skills): add datahub-rca for path-grounded root-cause analysis" \
-  --body-file /Users/binaydalai/cauzon/contrib/datahub-skills-pr/PR_BODY.md
-```
+What was done to get there:
 
-Add `--draft` if you would rather it land as a draft first.
-
-What was already done:
-
-- Forked `datahub-project/datahub-skills` to `bkd-dotcom/datahub-skills`.
-- Branch `feat/datahub-rca-skill`, committed with a Conventional Commit title
-  (the repo enforces these on PR titles).
+- Forked `datahub-project/datahub-skills` to `bkd-dotcom/datahub-skills`, branch
+  `feat/datahub-rca-skill`.
+- Conventional Commit title, which their CI enforces on PR titles and which passes.
 - `markdownlint-cli2` and `prettier --check` run with **this repository's own
   configs** — prettier reformatted `SKILL.md`'s tables and one emphasis marker,
-  which would otherwise have failed CI. That formatting is synced back here so
-  the two copies do not drift.
+  which would otherwise have failed their lint job. That formatting is synced back
+  here so the two copies do not drift.
 - Verified `evaluations/` is a real convention upstream (three skills use it) and
   that the JSON shape matches theirs.
 - Verified `datahub-quality` does **not** overlap: it manages assertions and
-  incidents, and says nothing about diagnosing cause.
+  incidents and says nothing about diagnosing cause.
 - Amended the `using-datahub` routing table, which sent `"root cause"` to
   `datahub-lineage`. Without that the skill is unreachable in practice.
+- Diffed the branch against `upstream/main` before opening, to confirm no stray
+  changes rode along.
 
 ## Steps (reference — already executed)
 

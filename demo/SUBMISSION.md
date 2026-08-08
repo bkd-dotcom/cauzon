@@ -207,8 +207,9 @@ Write-back tools need the MCP server running with
 
 ## Open-source contribution
 
-`contrib/datahub-skills-pr/` contains **`datahub-rca`**, a DataHub Skill that
-teaches any MCP-connected agent to perform path-grounded RCA — the skill, a
+**Open pull request: [datahub-project/datahub-skills#117](https://github.com/datahub-project/datahub-skills/pull/117)** —
+**`datahub-rca`**, a DataHub Skill that teaches any MCP-connected agent to perform
+path-grounded RCA. Source in `contrib/datahub-skills-pr/`: the skill, a
 signals reference, a grounding reference, a dossier template, evaluations, and a
 slash-command wrapper, formatted to the conventions of
 `datahub-project/datahub-skills`.

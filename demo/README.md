@@ -38,7 +38,7 @@ are legible after compression, and hide bookmarks and notifications.
 | 7 | 1:50–2:05 | Confidence panel | "Confidence isn't a magic number. It's grounding times signal strength times origin purity, and every factor states its own reason." |
 | 8 | 2:05–2:25 | Scroll: blast radius, then missing guardrail | "It doesn't stop at the cause. Three downstream assets inherit this data and none of them is alerting — somebody is reading those right now. And it read its own prior dossiers back: this asset has stalled twice before, so instead of 'backfill this window' it proposes the freshness check that would have caught it 27 hours earlier, at the source." |
 | 9 | 2:25–2:40 | Write-back receipts, then the DataHub UI showing the `root-cause` tag | "Then it files everything back: the dossier, the tag, the owner. The next person inherits the answer instead of re-deriving it." |
-| 10 | 2:40–2:55 | `contrib/datahub-skills-pr/` or the open PR | "And the same technique is contributed upstream as a DataHub Skill, so any MCP-connected agent can do path-grounded RCA. Every root cause, proven from the source." |
+| 10 | 2:40–2:55 | [the open PR](https://github.com/datahub-project/datahub-skills/pull/117) | "And the same technique is contributed upstream as a DataHub Skill, so any MCP-connected agent can do path-grounded RCA. Every root cause, proven from the source." |
 
 ## If you have less time
 
@@ -103,3 +103,7 @@ rejection line — useful for a thumbnail or as a fallback if a recording fails.
 - [ ] Repo is public and GitHub's About panel shows the Apache-2.0 license
 - [ ] Devpost description pasted from `demo/SUBMISSION.md`
 - [ ] Feedback survey opted into (it's a separate $50 × 10 prize pool)
+- [x] Open-source contribution PR opened —
+      [datahub-project/datahub-skills#117](https://github.com/datahub-project/datahub-skills/pull/117)
+      (claims the Meaningful Open-Source Contribution bonus; link it in the Devpost
+      description, since a reviewer will not go looking for it)

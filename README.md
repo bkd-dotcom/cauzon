@@ -407,9 +407,10 @@ node may be laid out to the left of something it depends on.
 
 ## Open-source contribution
 
-[`contrib/datahub-skills-pr/`](./contrib/datahub-skills-pr/) is a ready-to-PR
-**DataHub Skill** (`datahub-rca`) that teaches any MCP-connected agent — Claude
-Code, Cursor, Gemini CLI — to perform path-grounded RCA. It is formatted to match
+**Open: [datahub-project/datahub-skills#117](https://github.com/datahub-project/datahub-skills/pull/117)** — a **DataHub Skill**
+(`datahub-rca`) that teaches any MCP-connected agent — Claude Code, Cursor, Gemini
+CLI — to perform path-grounded RCA. Source in
+[`contrib/datahub-skills-pr/`](./contrib/datahub-skills-pr/). It is formatted to match
 the conventions of
 [`datahub-project/datahub-skills`](https://github.com/datahub-project/datahub-skills),
 verified against that repo's `datahub-lineage` skill and `CONTRIBUTING.md`.
