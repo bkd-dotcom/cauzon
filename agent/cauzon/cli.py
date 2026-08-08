@@ -83,12 +83,18 @@ def main() -> None:
 
         blast = diagnosis.blast_radius
         if blast and blast.count:
-            silent = len(blast.silent)
-            print(
-                f"   Blast radius: {blast.count} downstream, {silent} not alerting"
-            )
+            if blast.unknown and not blast.silent:
+                tail = "alerting status unavailable on this backend"
+            else:
+                tail = f"{len(blast.silent)} not alerting"
+            print(f"   Blast radius: {blast.count} downstream, {tail}")
             for asset in blast.impacted:
-                flag = "" if asset.is_alerting else "  <- nobody watching"
+                if asset.alerting is False:
+                    flag = "  <- nobody watching"
+                elif asset.alerting is None:
+                    flag = "  <- alerting status unknown"
+                else:
+                    flag = "  <- alerting"
                 print(f"     - {asset.name} ({asset.kind}){flag}")
 
         if diagnosis.timeline:

@@ -169,7 +169,7 @@
             "hops_from_symptom": 1,
             "kind": "dashboard",
             "owner": "exec-reporting@example.com",
-            "is_alerting": false
+            "alerting": false
           },
           {
             "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,nyc.exec_weekly_summary,PROD)",
@@ -177,7 +177,7 @@
             "hops_from_symptom": 1,
             "kind": "dashboard",
             "owner": "exec-reporting@example.com",
-            "is_alerting": false
+            "alerting": false
           },
           {
             "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.driver_payouts,PROD)",
@@ -185,11 +185,13 @@
             "hops_from_symptom": 1,
             "kind": "dataset",
             "owner": "finance-eng@example.com",
-            "is_alerting": false
+            "alerting": false
           }
         ],
         "count": 3,
-        "silent_count": 3
+        "silent_count": 3,
+        "alerting_count": 0,
+        "unknown_count": 0
       },
       "proposed_assertion": {
         "target_urn": "urn:li:dataset:(urn:li:dataPlatform:s3,nyc.raw_trips,PROD)",
@@ -406,7 +408,7 @@
                 "hops_from_symptom": 1,
                 "kind": "dashboard",
                 "owner": "exec-reporting@example.com",
-                "is_alerting": false
+                "alerting": false
               },
               {
                 "urn": "urn:li:dataset:(urn:li:dataPlatform:looker,nyc.exec_weekly_summary,PROD)",
@@ -414,7 +416,7 @@
                 "hops_from_symptom": 1,
                 "kind": "dashboard",
                 "owner": "exec-reporting@example.com",
-                "is_alerting": false
+                "alerting": false
               },
               {
                 "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,nyc.driver_payouts,PROD)",
@@ -422,11 +424,13 @@
                 "hops_from_symptom": 1,
                 "kind": "dataset",
                 "owner": "finance-eng@example.com",
-                "is_alerting": false
+                "alerting": false
               }
             ],
             "count": 3,
-            "silent_count": 3
+            "silent_count": 3,
+            "alerting_count": 0,
+            "unknown_count": 0
           }
         },
         {
@@ -608,11 +612,13 @@
             "hops_from_symptom": 1,
             "kind": "dashboard",
             "owner": "revenue-analytics@example.com",
-            "is_alerting": false
+            "alerting": false
           }
         ],
         "count": 1,
-        "silent_count": 1
+        "silent_count": 1,
+        "alerting_count": 0,
+        "unknown_count": 0
       },
       "proposed_assertion": {
         "target_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,shop.raw_orders,PROD)",
@@ -768,11 +774,13 @@
                 "hops_from_symptom": 1,
                 "kind": "dashboard",
                 "owner": "revenue-analytics@example.com",
-                "is_alerting": false
+                "alerting": false
               }
             ],
             "count": 1,
-            "silent_count": 1
+            "silent_count": 1,
+            "alerting_count": 0,
+            "unknown_count": 0
           }
         },
         {
@@ -970,11 +978,13 @@
             "hops_from_symptom": 1,
             "kind": "dashboard",
             "owner": "product-analytics@example.com",
-            "is_alerting": false
+            "alerting": false
           }
         ],
         "count": 1,
-        "silent_count": 1
+        "silent_count": 1,
+        "alerting_count": 0,
+        "unknown_count": 0
       },
       "proposed_assertion": {
         "target_urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,app.user_dim,PROD)",
@@ -1151,11 +1161,13 @@
                 "hops_from_symptom": 1,
                 "kind": "dashboard",
                 "owner": "product-analytics@example.com",
-                "is_alerting": false
+                "alerting": false
               }
             ],
             "count": 1,
-            "silent_count": 1
+            "silent_count": 1,
+            "alerting_count": 0,
+            "unknown_count": 0
           }
         },
         {

@@ -1043,8 +1043,26 @@ class MCPDataHubClient:
 
 
 def get_client() -> DataHubClient:
-    """Factory honouring CAUZON_DATAHUB_BACKEND (default: mock)."""
+    """Factory honouring CAUZON_DATAHUB_BACKEND (default: mock).
+
+    Raises on an unrecognised value rather than falling back to the mock. Silently
+    substituting the planted demo graph for a backend somebody asked for is the
+    worst possible failure here: `CAUZON_DATAHUB_BACKEND=live` used to return the
+    mock, so the CLI printed a confident finding about `raw_trips` — an asset that
+    does not exist in the live catalog — with nothing to indicate it was fiction.
+    """
     backend = os.getenv("CAUZON_DATAHUB_BACKEND", "mock").lower()
+    if backend == "mock":
+        return MockDataHubClient()
     if backend == "mcp":
         return MCPDataHubClient()
-    return MockDataHubClient()
+    if backend == "live":
+        # Imported here rather than at module scope: live_client imports this
+        # module for the protocol, so a top-level import would be circular.
+        from .live_client import LiveDataHubClient
+
+        return LiveDataHubClient()
+    raise ValueError(
+        f"CAUZON_DATAHUB_BACKEND={backend!r} is not a known backend. "
+        f"Use 'mock', 'live', or 'mcp'."
+    )

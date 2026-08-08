@@ -64,7 +64,12 @@ export interface ImpactedAsset {
   kind: "dataset" | "dashboard";
   owner: string | null;
   /** False means it is wrong and nobody is being told — the dangerous case. */
-  is_alerting: boolean;
+  /**
+   * true = alerting, false = affected and silent, null = this backend could not
+   * report it. Null is not "silent": an undetermined status is not evidence that
+   * nobody is watching.
+   */
+  alerting: boolean | null;
 }
 
 export interface BlastRadius {
@@ -72,6 +77,9 @@ export interface BlastRadius {
   impacted: ImpactedAsset[];
   count: number;
   silent_count: number;
+  /** Optional so an older deployed backend degrades instead of throwing. */
+  alerting_count?: number;
+  unknown_count?: number;
 }
 
 export interface ProposedAssertion {

@@ -407,6 +407,83 @@ def test_blast_radius_finds_downstream_assets_nobody_is_watching():
     assert len(blast.silent) == blast.count == 3
 
 
+def test_alerting_status_is_derived_from_the_open_incident_list():
+    """The one asset that is alerting is the symptom's own sibling, not a guess.
+
+    `daily_revenue` has an open incident in this fixture, and the mock's downstream
+    assets do not, so the queue is the source of that fact.
+    """
+    client, diag = _investigate("freshness")
+    open_urns = {i["urn"] for i in client.list_open_incidents()}
+    for asset in diag.blast_radius.impacted:
+        assert asset.alerting is (asset.urn in open_urns)
+
+
+def test_undeterminable_alerting_status_is_unknown_not_silent():
+    """A catalog that cannot report alerting must not be read as reporting silence.
+
+    This is the regression that matters most in the project. `alerting` used to
+    default to False, so every backend without the mock's `has_open_incident` key
+    recorded its whole blast radius as "wrong and nobody is looking" — an unchecked
+    negative, filed into the catalog, by a tool whose entire claim is that it never
+    states what it cannot prove.
+    """
+
+    class Unreportable(MockDataHubClient):
+        def list_open_incidents(self):
+            raise RuntimeError("this catalog exposes no incident API")
+
+    client = Unreportable()
+    symptom = next(
+        urn for urn, n in client._graph.items() if n["name"] == "daily_revenue"
+    )
+    diag = CauzonAgent(client=client).investigate(
+        Incident(urn=symptom, title="volume drop", description=""), write_back=False
+    )
+
+    blast = diag.blast_radius
+    assert blast.count == 3
+    assert all(a.alerting is None for a in blast.impacted)
+    # Unknown is not silence.
+    assert blast.silent == []
+    assert len(blast.unknown) == 3
+
+    dossier = CauzonAgent._render_dossier(diag)
+    assert "not alerting" not in dossier
+    assert "nobody is currently looking" not in dossier
+    assert "alerting status unavailable" in dossier
+
+
+def test_partly_determinable_alerting_reports_both_counts_separately():
+    """Some known-silent and some unknown must not be merged into one number.
+
+    Rolling the undetermined assets into the silent count would restate the same
+    unchecked negative in aggregate, which is the bug this whole change exists to
+    remove.
+    """
+
+    class PartialReport(MockDataHubClient):
+        def list_open_incidents(self):
+            # Reports the queue, but this catalog only covers one platform, so the
+            # Looker assets' status is genuinely not knowable from it.
+            return [i for i in super().list_open_incidents() if "looker" not in i["urn"]]
+
+    client = PartialReport()
+    symptom = next(
+        urn for urn, n in client._graph.items() if n["name"] == "daily_revenue"
+    )
+    diag = CauzonAgent(client=client).investigate(
+        Incident(urn=symptom, title="volume drop", description=""), write_back=False
+    )
+    blast = diag.blast_radius
+
+    # The queue answered, so nothing is unknown — every asset gets a real verdict.
+    assert len(blast.unknown) == 0
+    assert len(blast.silent) + len(blast.alerting) == blast.count
+    dossier = CauzonAgent._render_dossier(diag)
+    assert "alerting status unavailable" not in dossier
+
+
 def test_blast_radius_distinguishes_dashboards_from_datasets():
     """A wrong dashboard matters more than a wrong intermediate table."""
     _client, diag = _investigate("freshness")
@@ -607,3 +684,35 @@ def test_dossier_records_every_new_finding():
     assert "blast radius" in dossier
     assert "missing guardrail" in dossier
     assert "not alerting" in dossier
+
+
+# --------------------------------------------------------------------------- #
+# Backend dispatch
+# --------------------------------------------------------------------------- #
+def test_get_client_honours_every_documented_backend(monkeypatch):
+    """`live` used to fall through to the mock, which is the worst failure here.
+
+    A backend that silently becomes the planted demo graph makes the CLI print a
+    confident finding about an asset that does not exist in the catalog the operator
+    asked about, with nothing to indicate it is fiction.
+    """
+    from cauzon.datahub_client import MockDataHubClient as _Mock, get_client
+    from cauzon.live_client import LiveDataHubClient
+
+    monkeypatch.delenv("CAUZON_DATAHUB_BACKEND", raising=False)
+    assert isinstance(get_client(), _Mock), "default must stay mock"
+
+    monkeypatch.setenv("CAUZON_DATAHUB_BACKEND", "mock")
+    assert isinstance(get_client(), _Mock)
+
+    monkeypatch.setenv("CAUZON_DATAHUB_BACKEND", "LIVE")  # case-insensitive
+    assert isinstance(get_client(), LiveDataHubClient)
+
+
+def test_get_client_refuses_an_unknown_backend(monkeypatch):
+    """Better to fail loudly than to serve the demo graph as though it were real."""
+    from cauzon.datahub_client import get_client
+
+    monkeypatch.setenv("CAUZON_DATAHUB_BACKEND", "postgres")
+    with pytest.raises(ValueError, match="not a known backend"):
+        get_client()

@@ -409,6 +409,20 @@ export function BlastRadiusPanel({ blast }: { blast: BlastRadius }) {
             — nobody is currently being told.
           </>
         )}
+        {/* Said rather than implied: an undetermined alerting status is not the
+            same as a confirmed silence, and this panel must not read as though
+            it were. */}
+        {(blast.unknown_count ?? 0) > 0 && (
+          <>
+            {blast.silent_count > 0 ? " " : ""}
+            This catalog did not report alerting status for{" "}
+            {blast.silent_count > 0
+              ? `${blast.unknown_count} of them`
+              : `${blast.unknown_count === blast.count ? "any of them" : `${blast.unknown_count}`}`}
+            , so whether anyone is watching{" "}
+            {blast.unknown_count === 1 ? "it" : "them"} is unknown.
+          </>
+        )}
       </p>
       <ul className="m-0 list-none space-y-0 p-0">
         {blast.impacted.map((asset) => (
@@ -418,7 +432,7 @@ export function BlastRadiusPanel({ blast }: { blast: BlastRadius }) {
           >
             <span
               className={`text-[13px] font-medium ${
-                asset.is_alerting ? "text-bone-dim" : "text-oxide"
+                asset.alerting === false ? "text-oxide" : "text-bone-dim"
               }`}
             >
               {asset.name}
@@ -431,10 +445,14 @@ export function BlastRadiusPanel({ blast }: { blast: BlastRadius }) {
               <span className="text-[11px] text-muted">{asset.owner}</span>
             )}
             <span className="ml-auto shrink-0">
-              {asset.is_alerting ? (
+              {asset.alerting === true ? (
                 <span className="label text-amber">alerting</span>
-              ) : (
+              ) : asset.alerting === false ? (
                 <span className="label text-oxide">silent</span>
+              ) : (
+                <span className="label text-muted" title="This backend does not report alerting status">
+                  unknown
+                </span>
               )}
             </span>
           </li>

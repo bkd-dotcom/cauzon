@@ -618,6 +618,22 @@ class CauzonAgent:
             # Could not look. Distinct from looking and finding nothing.
             return None
 
+        # Which assets are alerting, asked once for the whole walk.
+        #
+        # This used to read a `has_open_incident` flag that only the planted demo
+        # fixtures set, so on every real catalog it came back False and each
+        # downstream asset was recorded as "wrong and nobody is looking" without
+        # anything having been checked. The open-incident list is the actual source
+        # of that fact and every backend exposes it, so ask it directly. When the
+        # call fails, the answer is `None` — unknown — not False.
+        alerting_urns: Optional[set[str]] = None
+        try:
+            alerting_urns = {
+                i["urn"] for i in self.client.list_open_incidents() if i.get("urn")
+            }
+        except Exception:
+            pass
+
         impacted: list[ImpactedAsset] = []
         for node in downstream:
             urn = node["urn"]
@@ -633,7 +649,7 @@ class CauzonAgent:
                     hops_from_symptom=node.get("hops", 1),
                     kind=_asset_kind(urn),
                     owner=entity.get("owner"),
-                    is_alerting=bool(entity.get("has_open_incident")),
+                    alerting=None if alerting_urns is None else urn in alerting_urns,
                 )
             )
         impacted.sort(key=lambda a: a.hops_from_symptom)
@@ -643,6 +659,16 @@ class CauzonAgent:
             emit(
                 "scope",
                 "Nothing consumes this asset downstream — the damage stops here.",
+                blast.to_dict(),
+            )
+            return blast
+
+        if alerting_urns is None:
+            emit(
+                "scope",
+                f"{blast.count} downstream asset(s) inherit this data. This catalog "
+                f"did not report which of them are alerting, so how many are being "
+                f"watched is unknown.",
                 blast.to_dict(),
             )
             return blast
@@ -1102,18 +1128,45 @@ class CauzonAgent:
 
         blast = diagnosis.blast_radius
         if blast and blast.count:
-            silent = blast.silent
+            # Three states, and the wording has to distinguish them. This dossier is
+            # filed into the catalog, so "nobody is currently looking" is a claim
+            # about the world — it may only be made about assets whose alerting
+            # status was actually determined.
+            if blast.unknown and not blast.silent:
+                headline = (
+                    f"{blast.count} downstream asset(s) inherit this data. This "
+                    f"catalog did not report alerting status, so whether anyone is "
+                    f"watching them is unknown:"
+                )
+            else:
+                silent = len(blast.silent)
+                headline = (
+                    f"{blast.count} downstream asset(s) inherit this data. "
+                    f"{silent} of them {'is' if silent == 1 else 'are'} wrong "
+                    f"without alerting, so nobody is currently looking:"
+                )
+                if blast.unknown:
+                    headline += (
+                        f" (alerting status unavailable for "
+                        f"{len(blast.unknown)} more)"
+                    )
+
+            def _state(asset: ImpactedAsset) -> str:
+                if asset.alerting is True:
+                    return " — alerting"
+                if asset.alerting is False:
+                    return " — **not alerting**"
+                return " — alerting status unavailable"
+
             lines += [
                 "",
                 "### Blast radius",
-                f"{blast.count} downstream asset(s) inherit this data. "
-                f"{len(silent)} of them {'is' if len(silent) == 1 else 'are'} wrong "
-                f"without alerting, so nobody is currently looking:",
+                headline,
                 *[
                     f"- **{a.name}** ({a.kind}, {a.hops_from_symptom} hop"
                     f"{'' if a.hops_from_symptom == 1 else 's'} downstream)"
                     + (f" — owner {a.owner}" if a.owner else "")
-                    + ("" if a.is_alerting else " — **not alerting**")
+                    + _state(a)
                     for a in blast.impacted
                 ],
             ]

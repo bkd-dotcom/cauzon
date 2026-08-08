@@ -160,9 +160,18 @@ class ImpactedAsset:
     hops_from_symptom: int
     kind: str = "dataset"  # dataset | dashboard
     owner: Optional[str] = None
-    # True when this asset has its own failing assertion. The dangerous ones are
-    # the assets that are wrong and *not* alerting — nobody is looking at them.
-    is_alerting: bool = False
+    # Whether this asset has its own failing assertion. Three states, not two:
+    #
+    #   True  — it is alerting, so somebody has been told
+    #   False — it is affected and silent, which is the dangerous case
+    #   None  — we could not determine it on this backend
+    #
+    # `None` exists because the alternative was worse. This field used to default
+    # to False, and the catalogs that cannot report alerting status therefore had
+    # every downstream asset recorded as "wrong and nobody is looking" — an
+    # unchecked negative, asserted by a project whose whole claim is that it never
+    # states what it cannot prove.
+    alerting: Optional[bool] = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -186,8 +195,21 @@ class BlastRadius:
 
     @property
     def silent(self) -> list[ImpactedAsset]:
-        """Affected but not alerting — the ones that will surprise someone."""
-        return [a for a in self.impacted if not a.is_alerting]
+        """Affected and confirmed not alerting — the ones that will surprise someone.
+
+        Deliberately `is False` rather than falsy: an asset whose alerting status we
+        could not determine is not evidence that nobody is looking at it.
+        """
+        return [a for a in self.impacted if a.alerting is False]
+
+    @property
+    def alerting(self) -> list[ImpactedAsset]:
+        return [a for a in self.impacted if a.alerting is True]
+
+    @property
+    def unknown(self) -> list[ImpactedAsset]:
+        """Affected, with alerting status this backend could not report."""
+        return [a for a in self.impacted if a.alerting is None]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -195,6 +217,8 @@ class BlastRadius:
             "impacted": [a.to_dict() for a in self.impacted],
             "count": self.count,
             "silent_count": len(self.silent),
+            "alerting_count": len(self.alerting),
+            "unknown_count": len(self.unknown),
         }
 
 
